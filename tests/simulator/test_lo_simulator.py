@@ -27,7 +27,7 @@ def _two_mode_program(*operations):
 def _unitary(program, cutoff):
     return (
         LOSimulator("unitary")
-        .run(program, simulation_config={"cutoff": cutoff})
+        .run(program, execution_config={"cutoff": cutoff})
         .result()
         .get_unitary()
     )
@@ -100,7 +100,7 @@ def test_hong_ou_mandel_photons_leave_together(method):
             program,
             shots=2000,
             initial_state=BasisState({modes[0]: 1, modes[1]: 1}),
-            simulation_config={"seed": 7},
+            execution_config={"seed": 7},
         )
         .result()
     )
@@ -144,11 +144,11 @@ def test_estimator_rejects_paulis_on_modes_at_any_cutoff():
     config = {"cutoff": 1}  # two levels per mode, like a qubit
 
     with pytest.raises(BackendValidationError, match="no fixed dimension"):
-        estimator.run(program, fq.Observable([("Z", 1.0)]), simulation_config=config)
+        estimator.run(program, fq.Observable([("Z", 1.0)]), execution_config=config)
 
     # A qubit register in the same program keeps its Paulis.
     value = estimator.run(
-        program, fq.Observable([("IZ", 1.0)]), simulation_config=config
+        program, fq.Observable([("IZ", 1.0)]), execution_config=config
     ).result()
     assert value.get_expectation() == pytest.approx(1.0)
 
@@ -171,7 +171,7 @@ def test_projector_levels_are_checked_against_the_cutoff():
         program,
         fq.Observable.from_sparse([(Projector(3), (0,), 1.0)]),
         initial_state=start,
-        simulation_config={"cutoff": 3},
+        execution_config={"cutoff": 3},
     ).result()
     assert value.get_expectation() == pytest.approx(0.0, abs=1e-12)
 
@@ -214,7 +214,7 @@ def test_explicit_cutoff_below_the_photon_total_warns():
     options = {"initial_state": basis, **_STATE_ONLY}
 
     with pytest.warns(UserWarning, match="below the 2 photons"):
-        LOSimulator("SV").run(program, simulation_config={"cutoff": 1}, **options)
+        LOSimulator("SV").run(program, execution_config={"cutoff": 1}, **options)
     # A mode level above the cutoff cannot be represented at all.
     with (
         pytest.warns(UserWarning),
@@ -223,7 +223,7 @@ def test_explicit_cutoff_below_the_photon_total_warns():
         LOSimulator("SV").run(
             program,
             initial_state=BasisState({modes[0]: 2}),
-            simulation_config={"cutoff": 1},
+            execution_config={"cutoff": 1},
             **_STATE_ONLY,
         )
 
@@ -245,7 +245,7 @@ def test_invalid_cutoff_is_rejected(cutoff):
     program = _two_mode_program(ops.PhaseShifter(0.1))
     with pytest.raises(BackendValidationError, match="cutoff"):
         LOSimulator("SV").run(
-            program, simulation_config={"cutoff": cutoff}, **_STATE_ONLY
+            program, execution_config={"cutoff": cutoff}, **_STATE_ONLY
         )
 
 
@@ -277,8 +277,8 @@ def test_level_checks_on_modes_run_once_the_cutoff_is_known():
     program.add(ops.SwapLevels(0, 3), modes[0])  # no dimension to check yet
 
     with pytest.raises(ValueError, match="invalid for target dimension 3"):
-        LOSimulator("SV").run(program, simulation_config={"cutoff": 2}, **_STATE_ONLY)
-    LOSimulator("SV").run(program, simulation_config={"cutoff": 3}, **_STATE_ONLY)
+        LOSimulator("SV").run(program, execution_config={"cutoff": 2}, **_STATE_ONLY)
+    LOSimulator("SV").run(program, execution_config={"cutoff": 3}, **_STATE_ONLY)
 
 
 def test_generic_simulator_rejects_dimensionless_registers():

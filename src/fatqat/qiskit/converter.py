@@ -24,9 +24,11 @@ def circuit_to_program(circuit: QuantumCircuit) -> Program:
     instructions are discarded. Transpile other gate-level circuits to that
     target before conversion.
 
-    The converter preserves named quantum and classical registers. It records
-    the circuit name, metadata, and global phase in the program metadata, but
-    the global phase is not applied during FATQAT execution. Legacy ``c_if``
+    The converter preserves named quantum and classical registers. The
+    program metadata records the Qiskit circuit name as ``qiskit_circuit_name``,
+    its metadata (if present) as ``qiskit_circuit_metadata``, and its phase as
+    ``qiskit_global_phase``. FatQat runs the operations without applying this
+    global phase. Legacy ``c_if``
     conditions (Qiskit 1.x) on gates and resets are converted to fatqat
     conditions; a conditional measurement is rejected. Standalone bits,
     unbound instruction parameters, delay or pulse instructions, and classical

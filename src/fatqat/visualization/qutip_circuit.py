@@ -1,7 +1,7 @@
 """Draw FATQAT programs through QuTiP-QIP.
 
 :meth:`fatqat.Program.draw` is the normal entry point. Use
-:func:`to_qubit_circuit` when you need the intermediate QuTiP-QIP circuit and
+:func:`to_qutip_circuit` when you need the intermediate QuTiP-QIP circuit and
 its renderer options. Conversion is one-way and intended only for drawing;
 custom-operation placeholders in the returned circuit are not executable.
 
@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import io
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from .. import operations as ops
@@ -318,7 +319,7 @@ def _adapt_legacy_condition_controls(circuit) -> None:
     map each cbit into the renderer's combined qbit/cbit layer arrays:
     ``c0 -> -num_cbits``, ..., ``cN -> -1``. The replacement remains local to
     the fresh circuit created by :meth:`fatqat.Program.draw`;
-    :func:`to_qubit_circuit` keeps returning its normal semantic translation.
+    :func:`to_qutip_circuit` keeps returning its normal semantic translation.
     """
     from qutip_qip.operations import Gate
 
@@ -587,22 +588,20 @@ def _expand_targets(targets: tuple) -> tuple[tuple[RegisterRef, ...], ...]:
     return tuple(zip(*members))
 
 
-def to_qubit_circuit(program: Program, *, _barrier_markers: bool = False):
+def to_qutip_circuit(program: Program, *, _barrier_markers: bool = False):
     """Convert a program to a QuTiP-QIP circuit for drawing.
 
-    Quantum and classical slots become wires in register declaration order.
-    Native gates use QuTiP-QIP symbols; gates it cannot draw natively,
-    including custom and qudit operations, become boxes labeled with the
-    operation name. Measurements, reset, barriers, and classical conditions
-    are retained; a barrier appears as a box labeled ``barrier`` (fatqat's
-    own `fatqat.Program.draw` renders it as a dashed separator instead), and
-    a condition attached to a barrier is not depicted. Register dimensions
-    are not shown.
+    Use the returned circuit with QuTiP-QIP's drawing methods. Wires follow
+    register declaration order and do not show register dimensions. Operations
+    without a native drawing symbol, such as custom gates, appear as labeled
+    boxes. Barriers appear as boxes without any attached condition.
 
-    Use the returned circuit for drawing only. Placeholder gates for non-native operations cannot be simulated with QuTiP-QIP.
+    The returned circuit is for drawing only. QuTiP-QIP cannot execute the
+    placeholders used for operations it does not support.
+    The earlier name ``to_qubit_circuit`` is deprecated.
 
     Args:
-        program: Program to translate. Qudit registers are accepted, but their dimensions are not visible in the diagram.
+        program: Program to draw, including programs with qudit registers.
 
     Returns:
         A ``qutip_qip.circuit.QubitCircuit`` ready for QuTiP-QIP's drawing methods.
@@ -644,6 +643,16 @@ def to_qubit_circuit(program: Program, *, _barrier_markers: bool = False):
     return circuit
 
 
+def to_qubit_circuit(program: Program, *, _barrier_markers: bool = False):
+    """Deprecated. Use ``to_qutip_circuit()`` instead."""
+    warnings.warn(
+        "to_qubit_circuit() is deprecated; use to_qutip_circuit() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return to_qutip_circuit(program, _barrier_markers=_barrier_markers)
+
+
 def _add_operation(
     circuit, step, operands, qubit_index, clbit_index, *, barrier_markers=False
 ):
@@ -682,7 +691,7 @@ def _add_operation(
     # QuTiP-QIP has no barrier primitive. For fatqat's own renderers, add a
     # drawing-only box carrying a private style marker that the adapters
     # replace with a dashed vertical separator. Circuits handed to any other
-    # renderer (the public to_qubit_circuit contract, or a forwarded renderer
+    # renderer (the public to_qutip_circuit contract, or a forwarded renderer
     # name) get a plain box labeled "barrier" instead, so the private marker
     # label never leaks into user-visible output.
     if isinstance(operation, type(ops.Barrier)):
@@ -767,7 +776,7 @@ def _draw_program(program: Program, renderer: str = "matplotlib", **kwargs: Any)
         or whatever QuTiP-QIP's ``draw`` returns for any other renderer.
     """
     if renderer in {"text", "matplotlib"}:
-        circuit = to_qubit_circuit(program, _barrier_markers=True)
+        circuit = to_qutip_circuit(program, _barrier_markers=True)
         if _gate_api() == _API_STRING:
             _adapt_legacy_condition_controls(circuit)
 
@@ -776,5 +785,5 @@ def _draw_program(program: Program, renderer: str = "matplotlib", **kwargs: Any)
         return _render_matplotlib(circuit, **kwargs)
 
     # Foreign renderers receive marker-free circuits; see _add_operation.
-    circuit = to_qubit_circuit(program)
+    circuit = to_qutip_circuit(program)
     return circuit.draw(renderer, **kwargs)

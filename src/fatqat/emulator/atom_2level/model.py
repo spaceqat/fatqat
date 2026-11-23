@@ -172,7 +172,10 @@ class Atom2LevelModel:
 
     Create a model with ``from_document()``. Site coordinates are supplied
     separately through ``AtomArrangement``; select the global drive and
-    detuning channels through ``control``.
+    detuning channels through ``control``. The interaction coefficient for a
+    pair is the document's signed ``c6`` divided by the sixth power of their
+    separation in micrometres. Keep the source document to inspect the model
+    parameters and channel limits.
 
     Examples:
         >>> import fatqat as fq
@@ -237,6 +240,11 @@ class Atom2LevelModel:
     @property
     def control(self) -> _Atom2Controls:
         """Return the global ``drive`` and ``detuning`` selectors.
+
+        Both channels act on the whole arrangement. Add a pulse block with
+        ``program.add(pulse)`` to use its global channels. At run time, the model
+        applies any configured duration bounds to the block and checks drive
+        amplitude and detuning bounds on the interpolated waveforms.
 
         Returns:
             The available channel selectors.

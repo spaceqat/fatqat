@@ -719,11 +719,11 @@ def test_execution_summary_preserves_common_public_metadata():
     result = backend.run(
         fq.Program(1),
         shots=7,
-        simulation_config={"seed": 11, "schedule_mode": "ALAP"},
+        execution_config={"seed": 11, "schedule_mode": "ALAP"},
         result_config={"counts": False, "final_state": True},
     ).result()
 
-    assert result.metadata["simulation_config"] == {
+    assert result.metadata["execution_config"] == {
         "seed": 11,
         "schedule_mode": "ALAP",
     }

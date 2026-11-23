@@ -118,18 +118,26 @@ def test_atom_3level_execution_methods_keep_the_shared_forwarding_contract():
         "program",
         "shots",
         "resource_layout",
-        "simulation_config",
+        "execution_config",
         "result_config",
+        "simulation_config",
     )
     assert run["program"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
     assert all(
         run[name].kind is inspect.Parameter.KEYWORD_ONLY
-        for name in ("shots", "resource_layout", "simulation_config", "result_config")
+        for name in (
+            "shots",
+            "resource_layout",
+            "execution_config",
+            "result_config",
+            "simulation_config",
+        )
     )
     assert run["shots"].default == 1024
     assert run["resource_layout"].default is None
-    assert run["simulation_config"].default is None
+    assert run["execution_config"].default is None
     assert run["result_config"].default is None
+    assert run["simulation_config"].default is None
     assert get_type_hints(Atom3LevelEmulator.run)["return"] == Job[fq.Result]
     assert not hasattr(Atom3LevelEmulator, "propagator")
     assert not hasattr(Atom3LevelEmulator, "apply_final_frame")
@@ -583,7 +591,7 @@ def test_atom_3level_measurement_returns_the_physical_single_shot_posterior_befo
     result = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 23},
+        execution_config={"seed": 23},
         result_config={"counts": True, "final_state": True},
     ).result()
     density = result.get_density_matrix().full()
@@ -609,13 +617,13 @@ def test_atom_3level_feedforward_uses_the_reported_binary_bit_and_sampling_is_se
     first = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 17},
+        execution_config={"seed": 17},
         result_config={"counts": True, "final_state": True},
     ).result()
     second = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 17},
+        execution_config={"seed": 17},
         result_config={"counts": True, "final_state": True},
     ).result()
     assert first.get_counts() == second.get_counts() == {"0": 1}
@@ -631,10 +639,10 @@ def test_atom_3level_stochastic_measurement_is_seed_reproducible(
     program.measure(0, 0)
     config = {"counts": True, "final_state": False}
     first = backend.run(
-        program, shots=40, simulation_config={"seed": 91}, result_config=config
+        program, shots=40, execution_config={"seed": 91}, result_config=config
     ).result()
     second = backend.run(
-        program, shots=40, simulation_config={"seed": 91}, result_config=config
+        program, shots=40, execution_config={"seed": 91}, result_config=config
     ).result()
     assert first.get_counts() == second.get_counts()
     assert set(first.get_counts()) == {"0", "1"}
@@ -677,7 +685,7 @@ def test_atom_3level_result_metadata_keeps_common_runtime_facts(
             "max_step": pytest.approx(0.1 / (4 * np.pi)),
         },
     }
-    assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
+    assert result.metadata["execution_config"]["schedule_mode"] == "ASAP"
     assert result.metadata["result_config"] == {
         "counts": False,
         "final_state": True,
@@ -743,7 +751,7 @@ def test_weak_blockade_neither_rejects_nor_emits_the_removed_advisory(
     prepared = negative._prepare_program(pair)
     runner = negative._create_runner(
         prepared,
-        simulation=negative._simulation_config_cls(),
+        simulation=negative._execution_config_cls(),
         execution_mode="density_matrix",
         retain_final_state=True,
     )

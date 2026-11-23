@@ -1,14 +1,17 @@
 # Custom operations
 
-Use a custom operation to update quantum and classical data together or keep
-additional data for each shot. Define the operation as a `CustomOperation` and
-register a `CustomOperationImplementation` with the simulator's
-[`MatrixImplementationMap`](../implementation.md).
+Use a custom operation when a circuit step needs to work directly with the current
+shot. It can update the quantum state, write a classical result, or carry data
+from one step to the next. The `CustomOperation` describes the instruction, and a
+`CustomOperationImplementation` defines what it does when the simulator runs it.
 
-## Define and register an operation
+## Define and register an operation { #define-and-register-an-operation }
 
-This classical-only operation counts its calls and writes the count to the first
-classical register entry:
+Register the implementation in the simulator's
+[`MatrixImplementationMap`](../implementation.md) so it can dispatch the
+instruction. This example defines an operation with no quantum targets. Each call
+adds one to a per-shot counter and writes the value to the first classical
+register entry.
 
 ```python
 import fatqat as fq
@@ -44,36 +47,39 @@ result = simulator.run(
 print(result.get_counts())  # {"2": 4}
 ```
 
-To extend the atom-array profile, start with `AtomArraySimulator().implementation_map`.
+## Work with shot state { #state-and-execution }
 
-## State and execution
+Use `execute(operation, state, context)` to read or update the current shot.
+Return the updated `state` or a replacement `EvolutionState`. Keep per-shot data
+in `state.classical`, as the same operation and implementation can be reused
+across shots. Values written to `clbits` appear in the counts when requested.
 
-`execute(operation, state, context)` must return the updated state or a replacement
-`EvolutionState`. Keep shot-specific data in `state.classical`, rather than on the
-operation or implementation object, which may be reused across shots. User data
-is not included in counts; write reported values to `clbits` as in the example.
+Use `context.targets` to locate operands and `context.rng` for random draws that
+follow the simulation seed. The operation's classical condition is checked before
+`execute`. Attached noise runs afterward and evaluates its conditions on the
+updated classical register.
 
-Use `context.targets` to locate quantum operands and `context.rng` for random
-draws that respect the simulation seed. Field meanings, target ordering, and
-initialization defaults are described in the API reference below.
+## Run and request results { #supported-usage }
 
-Classical conditions are evaluated before `execute`. On the atom-array profile,
-custom operations handle absent atoms and pairing requirements themselves.
-Attached noise runs afterward and evaluates conditions against the updated
-classical register.
+Use a statevector or density-matrix run on `Simulator` or `AtomArraySimulator`,
+with either NumPy or Numba. On an atom array, start with the simulator's
+`implementation_map`. Your implementation is responsible for checking whether its
+sites contain atoms and whether they are paired.
 
-## Supported usage
+Custom operations support direct `run()` calls. Parameter sweeps, operator
+methods, and expectation calculations require other operation types.
 
-- `Simulator` and `AtomArraySimulator` support custom operations with statevector
-  and density-matrix methods on both NumPy and Numba.
-- `run_sweep`, unitary/superoperator methods, and expectation calculations do not
-  support custom operations.
-- Final-state output requires `shots=1` and `result_config={"final_state": True}`.
-  Counts without measurements require `result_config={"counts": True}`.
-- Process execution requires serializable operations, implementations, and initial
-  data. Define classes at module level when using it.
+To inspect a final state, use `shots=1` and `result_config={"final_state": True}`.
+To report counts from a program that has no measurement operations, request
+`result_config={"counts": True}`.
 
-## API reference
+For process parallelism, define operation and implementation classes at module
+level and use serializable initial data.
+
+## API reference { #api-reference }
+
+The entries below describe how to define an instruction, implement its behavior,
+and read the state and context passed to it.
 
 ::: fatqat.operations.CustomOperation
 

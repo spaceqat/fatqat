@@ -40,7 +40,19 @@ QuantumTarget = RegisterRef | RegisterView
 
 @dataclass(frozen=True)
 class OperationInstruction:
-    """Public read-only representation of an operation instruction"""
+    """A read-only operation record from `Program.instructions`.
+
+    Attributes:
+        operation: The operation to apply.
+        targets: Targets in operand order. A `RegisterRef` selects one slot;
+            a `RegisterView` selects a group. An operation such as `Put`
+            that takes one view as its entire target collection is recorded
+            with the individual refs in selection order. Direct pulse
+            operations have no targets in this tuple.
+        condition: ``None`` for an unconditional operation, or a tuple of
+            ``(classical_ref, value)`` pairs. All pairs must match when the
+            operation is reached.
+    """
 
     operation: Operation
     targets: tuple[RegisterRef | RegisterView, ...]
@@ -149,15 +161,14 @@ class Program:
             define or interpret its keys.
 
     Examples:
-        Build a two-qubit program, add gates, then measure both qubits:
+        Prepare a Bell state and measure both qubits:
 
         >>> import fatqat as fq
         >>> import fatqat.operations as ops
         >>> program = fq.Program(2, 2)
         >>> program.add(ops.H, 0)
-        >>> program.add(ops.CZ, (0, 1))
-        >>> program.measure(0, 0)
-        >>> program.measure(1, 1)
+        >>> program.add(ops.CX, (0, 1))
+        >>> program.measure_all()
     """
 
     def __init__(
@@ -170,6 +181,8 @@ class Program:
         metadata: Mapping[str, Any] | None = None,
     ) -> None:
         """Create a program from register counts or explicit register collections.
+
+        Explicit register objects are kept in the order supplied.
 
         Args:
             quantum_registers: Non-negative exact integer subsystem count, or
@@ -249,7 +262,10 @@ class Program:
                 ``"text"`` for a returned terminal-diagram string, or another
                 renderer name supported by QuTiP-QIP.
             **kwargs: Renderer options forwarded to QuTiP-QIP. Matplotlib
-                also accepts ``ax`` to draw on an existing axis.
+                also accepts ``ax`` to draw on an existing axis. Pass
+                ``theme`` to use a QuTiP-QIP theme. Without an explicit
+                theme, colors follow a custom Matplotlib ``axes.prop_cycle``
+                if set, or use the FatQat palette.
 
         Returns:
             A matplotlib ``Figure`` for ``"matplotlib"``, a string for
@@ -257,6 +273,8 @@ class Program:
 
         Raises:
             ImportError: If QuTiP-QIP is unavailable.
+            TypeError: If ``view`` is passed. Use
+                ``program.interaction_frequency().draw()`` for an interaction graph.
             UnsupportedOperationError: If the program contains a
                 ``PulseOperation``.
         """
@@ -272,11 +290,12 @@ class Program:
         return _draw_program(self, renderer, **kwargs)
 
     def dag(self):
-        """Return the hardware-independent logical instruction DAG.
+        """Return a dependency graph with one node per source instruction.
 
-        The returned graph contains logical operations, measurements,
-        conditions, and barriers. Backend directives such as ``Put``,
-        ``Pair``, and ``Unpair`` are intentionally excluded.
+        Instructions that share a quantum target appear in source order,
+        including ``Put``, ``Pair``, ``Unpair``, and barriers. A condition
+        reads the classical value before a later measurement can overwrite it.
+        Direct pulse blocks keep their position relative to every other instruction.
         """
         from ._program_graph import _build_instruction_dag
 
@@ -285,9 +304,11 @@ class Program:
     def interaction_frequency(self):
         """Return the logical-qubit interaction frequency graph.
 
-        The returned graph is an undirected weighted summary of source-level
-        two-qubit interactions. Call ``program.interaction_frequency().draw()``
-        to render it.
+        Each undirected edge counts the two-target operations on that pair in
+        the program, including conditional operations. A gate applied to
+        two views contributes once per paired slot. Device directives such as
+        ``Put``, ``Pair``, and ``Unpair`` and direct pulse controls are excluded.
+        Call ``program.interaction_frequency().draw()`` to render the graph.
         """
         from ._program_graph import _build_interaction_frequency_graph
 
@@ -407,32 +428,33 @@ class Program:
     ) -> None:
         """Append one operation to the program.
 
-        Target and condition structure is checked immediately; backend support
-        is checked when the program runs. For a
-        `fatqat.operations.PulseOperation`, omit ``targets``: its
-        `fatqat.emulator.PulseControl` channels address physical resources
-        directly, and the pulse emulator validates those addresses when the
-        program runs.
+        FatQat validates targets and conditions when you add the operation.
+        The backend checks support when you run the program.
 
         Args:
             op: `fatqat.operations.Operation` instance to append. Fixed gates
                 are ready-to-use values such as ``ops.X``;
                 parametric gates should be instantiated, such as
                 ``ops.RX(0.2)``.
-            targets: One target expression, or a tuple or list in
-                operation-operand order. A bare target must be a built-in ``int`` and is accepted
-                only when the program has exactly one quantum register. An
-                explicit `RegisterRef` must come from one of this program's
-                quantum registers. Every built-in unitary gate also accepts
-                one compatible `RegisterView` per operand. Unary gates act on
-                each selected member; multi-target gates zip views of the same
-                selection kind and length. Views over one register must not
-                overlap, and a grouped application cannot mix scalar and view
-                operands. A view-capable variable-arity operation accepts one
-                view as its complete target collection and expands it eagerly
-                into scalar members. Omit this argument when adding a
-                ``PulseOperation``; each control's channel identifies the
-                physical resource or resources it drives.
+            targets: A single operand, or a tuple or list in operand order.
+
+                - ``int``: Zero-based index into the program's only quantum
+                  register. Use a built-in integer.
+                - `RegisterRef`: A slot from one of the program's quantum
+                  registers. Use this form when there are multiple registers.
+                - `RegisterView`: Every built-in unitary gate accepts one view
+                  per operand. A single-target gate acts on each selected
+                  slot. A multi-target gate pairs slots by position across
+                  views of the same selection kind and length. Views over the
+                  same register must not overlap, and views cannot be mixed
+                  with scalar operands in one operation. A variable-arity
+                  operation that supports views, such as ``Put``, takes one
+                  view as its complete target collection.
+
+                For a `fatqat.operations.PulseOperation`, omit ``targets``.
+                Each `fatqat.emulator.PulseControl` channel specifies the
+                physical resources to drive. The emulator validates those
+                addresses when the program runs.
             condition: ``None`` (default) for an unconditional operation,
                 one ``(classical_slot, literal)`` pair, or a non-empty tuple or
                 list of such pairs. Every pair is required (logical AND). A
@@ -440,6 +462,9 @@ class Program:
                 classical register exists, or an explicit classical
                 ``RegisterRef`` from the program. A literal must be a Python
                 ``int`` in ``[0, slot_dimension)``; booleans are also accepted.
+                Each condition reads the slot when the operation is reached.
+                The simulators start classical slots at zero by default;
+                measurements can update their values.
 
         Returns:
             ``None``.
@@ -457,6 +482,29 @@ class Program:
                 condition literal is out of range.
             IndexError: If an integer operand is outside the relevant register.
 
+        Examples:
+            Apply a rotation to a slot in a specific register:
+
+            >>> import fatqat as fq
+            >>> import fatqat.operations as ops
+            >>> data = fq.QuantumRegister(2, name="data")
+            >>> ancilla = fq.QuantumRegister(1, name="ancilla")
+            >>> program = fq.Program([data, ancilla])
+            >>> program.add(ops.RX(0.2), data[1])
+
+            Apply one CX per column, with the top row as controls:
+
+            >>> grid = fq.GridRegister(2, 3, name="grid")
+            >>> program = fq.Program([grid])
+            >>> program.add(ops.CX, (grid.row(0), grid.row(1)))
+
+            Measure qubit 0 into classical slot 0, then apply X to qubit 1
+            only if the measurement returns 1:
+
+            >>> program = fq.Program(2, 1)
+            >>> program.add(ops.H, 0)
+            >>> program.measure(0, 0)
+            >>> program.add(ops.X, 1, condition=(0, 1))
         """
         if not isinstance(op, Operation):
             # Measurement lives in the operations namespace but is not an
@@ -566,13 +614,10 @@ class Program:
             IndexError: If an integer operand is outside the relevant register.
 
         Examples:
-            Add a grouped terminal measurement:
+            Measure two qubits into two classical slots:
 
             >>> import fatqat as fq
-            >>> import fatqat.operations as ops
             >>> program = fq.Program(2, 2)
-            >>> program.add(ops.H, 0)
-            >>> program.add(ops.CZ, (0, 1))
             >>> program.measure((0, 1), (0, 1))
         """
         # Lists are accepted alongside tuples, matching `Program.add`.

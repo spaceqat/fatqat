@@ -688,7 +688,7 @@ rerun the plotting cells. It replaces `summaries` with the new results.
 #     seed = int(np.random.SeedSequence([BASE_SEED, cycles]).generate_state(1)[0])
 #     result = noisy_backend.run(
 #         build_memory_z(cycles), shots=SHOTS,
-#         simulation_config={**RUN_CONFIG, "seed": seed},
+#         execution_config={**RUN_CONFIG, "seed": seed},
 #         result_config={"counts": True, "final_state": False},
 #     ).result()
 #     counts = result.get_counts_as_tuples()

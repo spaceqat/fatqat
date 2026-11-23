@@ -108,10 +108,10 @@ def test_real_trajectory_runs_are_reproducible_and_converge_to_mesolve(model):
     backend = _backend(model, rate=0.4)
     program = _program(amplitude=np.pi, duration=1.0)
     first = backend.run(
-        program, shots=400, simulation_config={"seed": 20260807}
+        program, shots=400, execution_config={"seed": 20260807}
     ).result()
     second = backend.run(
-        program, shots=400, simulation_config={"seed": 20260807}
+        program, shots=400, execution_config={"seed": 20260807}
     ).result()
 
     ensemble_program = _program(measured=False, amplitude=np.pi, duration=1.0)
@@ -146,13 +146,13 @@ def test_estimator_trajectories_are_reproducible_and_match_mesolve(model):
         program,
         occupation,
         shots=400,
-        simulation_config={"seed": 20260807},
+        execution_config={"seed": 20260807},
     ).result()
     second = trajectory.run(
         program,
         occupation,
         shots=400,
-        simulation_config={"seed": 20260807},
+        execution_config={"seed": 20260807},
     ).result()
     exact = ensemble.run(program, occupation).result()
 

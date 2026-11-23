@@ -8,10 +8,11 @@ from .result import Result
 
 
 class Backend(Protocol):
-    """Run a program using a backend's own execution options.
+    """Protocol for executing a program and returning a job.
 
-    Implementations need not inherit from this protocol. Each backend defines
-    and documents its supported options and the result fields it produces.
+    A backend satisfies the protocol if it provides ``run(program)`` and
+    returns a ``Job[Result]``. It can offer additional keyword options and
+    defines which fields it produces. Inheriting from this class is optional.
     """
 
     def run(self, program: Program, /) -> Job[Result]:
@@ -21,5 +22,6 @@ class Backend(Protocol):
             program: Program to execute.
 
         Returns:
-            A job containing the result produced by the backend.
+            A job whose ``result()`` returns the data produced by the backend
+            or raises the error recorded in the job.
         """

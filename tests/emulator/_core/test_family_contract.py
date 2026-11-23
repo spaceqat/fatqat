@@ -45,9 +45,9 @@ def test_both_families_return_an_eager_job_with_public_metadata(family_backend):
 @pytest.mark.parametrize("config", [{"unknown": 1}, {"interaction_cutoff": 2.0}])
 def test_both_families_reject_unknown_simulation_controls(family_backend, config):
     with pytest.raises(
-        BackendValidationError, match="does not support simulation_config"
+        BackendValidationError, match="does not support execution_config"
     ):
-        family_backend.run(_program(), simulation_config=config)
+        family_backend.run(_program(), execution_config=config)
 
 
 def test_counts_only_execution_does_not_retain_shot_state_arrays(
@@ -136,3 +136,17 @@ def test_any_missing_requested_final_state_fails_for_multi_shot_results(
         job.result()
     assert isinstance(exc.value.__cause__, BackendExecutionError)
     assert "omitted a requested final state" in str(exc.value.__cause__)
+
+
+def test_both_families_forward_the_deprecated_simulation_config(family_backend):
+    with pytest.warns(DeprecationWarning, match="use execution_config"):
+        job = family_backend.run(_program(), simulation_config={"seed": 3})
+
+    metadata = job.result().metadata
+    assert metadata["execution_config"]["seed"] == 3
+    assert metadata["simulation_config"] == metadata["execution_config"]
+
+
+def test_both_families_reject_both_config_keywords(family_backend):
+    with pytest.raises(TypeError, match="not both"):
+        family_backend.run(_program(), execution_config={}, simulation_config={})

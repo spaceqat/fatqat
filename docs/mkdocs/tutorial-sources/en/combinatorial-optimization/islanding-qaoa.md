@@ -666,7 +666,7 @@ uniform_rate = optimal_rate([rng.integers(0, 2, N) for _ in range(BASELINE_SAMPL
 quantum_draw = simulator.run(
     qaoa_program(betas, gammas, measure=True),
     shots=BASELINE_SAMPLES,
-    simulation_config={"seed": 17},
+    execution_config={"seed": 17},
 ).result()
 quantum_bitstrings = [
     np.array([int(character) for character in key], dtype=np.int8)
@@ -706,7 +706,7 @@ SHOTS = 2000
 measured = simulator.run(
     qaoa_program(betas, gammas, measure=True),
     shots=SHOTS,
-    simulation_config={"seed": 5},
+    execution_config={"seed": 5},
 ).result()
 counts = measured.get_counts()
 

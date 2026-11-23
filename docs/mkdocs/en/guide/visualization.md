@@ -4,7 +4,16 @@ title: "Visualization"
 
 # Visualize programs and results
 
-FATQAT provides drawing methods on the object that owns the data. A [`Program`][fatqat.Program] draws its circuit or derives a logical interaction summary, while a [`Result`][fatqat.Result] draws the measurement outcomes from one run.
+Visualization helps you check a program and understand its results. A circuit
+diagram makes the gate order, measurement positions, and classical conditions
+easier to follow. Plotting measurement outcomes shows which results are more
+common and how their frequencies differ. For longer programs, an interaction
+graph also helps you see which logical qubits often take part in operations
+together.
+
+FatQat provides drawing methods for these tasks: use a
+[`Program`][fatqat.Program] to draw circuits and logical interactions, and a
+[`Result`][fatqat.Result] to plot the measurement outcomes from one run.
 
 ## Draw a circuit
 
@@ -92,7 +101,9 @@ figure = result.draw(stat="frequencies")
 figure = result.draw(number_to_keep=20, sort="count")
 ```
 
-`number_to_keep` retains the most frequent outcomes and combines the remainder into an `other` bar. See [Result](../api/result.md#draw-counts) for the complete option reference.
+`number_to_keep` keeps the most frequent outcomes and groups the rest into an
+`other` bar. All plot options are listed under
+[`Result.draw()`][fatqat.Result.draw].
 
 ![Bell-state measurement frequencies with bars for the zero-zero and one-one outcomes.](../assets/generated/guide/visualization-counts.png)
 
@@ -110,7 +121,7 @@ figure = result.draw(number_to_keep=20, sort="count")
 
     result = (
         fq.simulator.Simulator(runtime="numpy")
-        .run(program, shots=1000, simulation_config={"seed": 7})
+        .run(program, shots=1000, execution_config={"seed": 7})
         .result()
     )
 

@@ -186,7 +186,7 @@ counts = (
     backend.run(
         ghz_program,
         shots=shots,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     )
     .result()
     .get_counts()
@@ -287,7 +287,7 @@ lossy_counts = (
     lossy_backend.run(
         ghz_program,
         shots=shots,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     )
     .result()
     .get_counts()

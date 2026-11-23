@@ -349,7 +349,7 @@ def test_nonadjacent_channel_and_superop_use_public_target_positions(runtime, fu
     )
     superop = (
         Simulator("superop", **kwargs)
-        .run(program, simulation_config=config)
+        .run(program, execution_config=config)
         .result()
         .get_superop()
     )
@@ -461,13 +461,13 @@ def test_gate_fusion_preserves_the_operator(method, force_fusion):
     program = _fusion_programs()["rotations"]
     fused = getattr(
         Simulator(method, runtime="numba")
-        .run(program, simulation_config={"fusion": True})
+        .run(program, execution_config={"fusion": True})
         .result(),
         f"get_{method}",
     )()
     unfused = getattr(
         Simulator(method, runtime="numba")
-        .run(program, simulation_config={"fusion": False})
+        .run(program, execution_config={"fusion": False})
         .result(),
         f"get_{method}",
     )()
@@ -495,7 +495,7 @@ def test_fusion_preserves_reversed_nonadjacent_target_positions(method, force_fu
     def run(fusion):
         result = (
             Simulator(method, runtime="numba")
-            .run(program, simulation_config={"fusion": fusion})
+            .run(program, execution_config={"fusion": fusion})
             .result()
         )
         return getattr(result, f"get_{method}")()
@@ -609,7 +609,7 @@ def test_serial_and_threaded_numba_give_identical_operators(method):
         return getattr(
             backend.run(
                 program,
-                simulation_config={
+                execution_config={
                     "shot_parallelism": "serial",
                     "kernel_parallelism": kernel_parallelism,
                     "max_workers": 1 if kernel_parallelism == "serial" else 2,

@@ -80,7 +80,7 @@ def test_replacement_state_preserves_quantum_classical_correlations_and_feedforw
         program,
         shots=64,
         initial_state=EvolutionState(classical=ClassicalState(extra={"history": []})),
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result()
     assert set(result.get_counts()) == {"001", "101"}
 
@@ -100,13 +100,13 @@ def test_process_execution_preserves_seed_streams(runtime):
         program,
         shots=64,
         initial_state=EvolutionState(classical=ClassicalState(extra={"history": []})),
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
     ).result()
     parallel = simulator.run(
         program,
         shots=64,
         initial_state=EvolutionState(classical=ClassicalState(extra={"history": []})),
-        simulation_config={
+        execution_config={
             "seed": 7,
             "shot_parallelism": "processes",
             "max_workers": 2,
@@ -213,7 +213,7 @@ def test_custom_classical_state_is_copied_without_breaking_references(
         runtime=runtime,
         implementation_map=implementations,
     )
-    simulation_config = {"shot_parallelism": shot_parallelism, "max_workers": 2}
+    execution_config = {"shot_parallelism": shot_parallelism, "max_workers": 2}
     implementations.add(Counter, PrepareImplementation())
     program = fq.Program(1, 1)
     program.add(Counter(), ())
@@ -223,7 +223,7 @@ def test_custom_classical_state_is_copied_without_breaking_references(
             shots=4,
             initial_state=initial,
             result_config={"counts": True},
-            simulation_config=simulation_config,
+            execution_config=execution_config,
         ).result().get_counts() == {"2": 4}
     assert initial.classical.extra == {"history": []}
     assert initial.classical.records == []
@@ -235,7 +235,7 @@ def test_custom_classical_state_is_copied_without_breaking_references(
         shots=4,
         initial_state=initial,
         result_config={"counts": True},
-        simulation_config=simulation_config,
+        execution_config=execution_config,
     ).result().get_counts() == {"3": 4}
 
 
@@ -369,7 +369,7 @@ def test_custom_operation_cannot_enable_occupancy_in_a_fused_run(runtime, method
 
     with pytest.raises(BackendExecutionError, match="occupancy"):
         simulator.run(
-            _prepared_program(), shots=4, simulation_config={"fusion": True}
+            _prepared_program(), shots=4, execution_config={"fusion": True}
         ).result()
     unfused = simulator.run(_prepared_program(), shots=4).result()
 
@@ -380,7 +380,7 @@ def test_custom_operation_that_keeps_occupancy_off_runs_fused():
     simulator = simulator_for(Prepare, IdentityImplementation())
 
     fused = simulator.run(
-        _prepared_program(), shots=4, simulation_config={"fusion": True}
+        _prepared_program(), shots=4, execution_config={"fusion": True}
     ).result()
     unfused = simulator.run(_prepared_program(), shots=4).result()
 

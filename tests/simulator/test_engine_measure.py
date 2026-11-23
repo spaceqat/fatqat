@@ -24,7 +24,7 @@ def test_samples_follow_the_born_distribution(runtime):
     program.measure(0, 0)
     counts = (
         Simulator("SV", runtime=runtime)
-        .run(program, shots=2000, simulation_config={"seed": 42})
+        .run(program, shots=2000, execution_config={"seed": 42})
         .result()
         .get_counts()
     )

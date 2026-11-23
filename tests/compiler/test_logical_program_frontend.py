@@ -264,7 +264,7 @@ def test_logical_program_runs_end_to_end_on_the_sc_simulator():
         backend.run(
             compiled,
             shots=32,
-            simulation_config={"seed": 3},
+            execution_config={"seed": 3},
         )
         .result()
         .get_counts()
@@ -285,7 +285,7 @@ def test_logical_program_runs_end_to_end_on_the_na_simulator():
         backend.run(
             compiled,
             shots=32,
-            simulation_config={"seed": 3},
+            execution_config={"seed": 3},
         )
         .result()
         .get_counts()
@@ -371,7 +371,7 @@ def test_conditions_run_directly_but_are_rejected_by_the_static_compiler():
 
     counts = (
         fq.simulator.Simulator("SV", runtime="numpy")
-        .run(program, shots=8, simulation_config={"seed": 3})
+        .run(program, shots=8, execution_config={"seed": 3})
         .result()
         .get_counts_as_tuples()
     )

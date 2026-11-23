@@ -46,7 +46,20 @@ def _verify_logical_source(program: object) -> None:
 
 
 def create_sc_pipeline() -> Compiler:
-    """Create the QASM and Python-frontend superconducting compiler."""
+    """Create a compiler with the built-in superconducting pipelines.
+
+    Choose a pipeline by its source type:
+
+    - `SC_PIPELINE` (``"qasm-to-sc"``): accepts `QasmSource`.
+    - `LOGICAL_SC_PIPELINE` (``"logical-to-sc"``): accepts `LogicalProgram`.
+
+    To lower to native gates, set ``CompileContext.target`` to an `SCTarget`
+    or `SCQubitSimulator`. The optional ``options["seed"]`` sets the routing
+    seed (default ``0``).
+
+    Returns:
+        A new `Compiler` with both pipelines registered.
+    """
 
     compiler = Compiler()
     compiler.register_ir(QasmSource, verify_qasm_source)
@@ -81,7 +94,19 @@ def _create_sc_rotation_pipeline() -> Compiler:
 
 
 def create_na_pipeline() -> Compiler:
-    """Create the QASM and Python-frontend neutral-atom compiler."""
+    """Create a compiler with the built-in neutral-atom pipelines.
+
+    Choose a pipeline by its source type:
+
+    - `NA_PIPELINE` (``"qasm-to-na-zap"``): accepts `QasmSource`.
+    - `LOGICAL_NA_PIPELINE` (``"logical-to-na"``): accepts `LogicalProgram`.
+
+    To produce a scheduled plan, pass an architecture such as one from
+    `fatqat.compiler.algorithms.load_architecture` as ``CompileContext.target``.
+
+    Returns:
+        A new `Compiler` with both pipelines registered.
+    """
 
     compiler = Compiler()
     compiler.register_ir(QasmSource, verify_qasm_source)
@@ -149,16 +174,23 @@ def compile_qasm_to_sc(
         source: OpenQASM 2 or 3 text, or an existing QasmSource.
         backend: SCTarget or SCQubitSimulator that supplies capacity and
             connectivity. The gate rules of an SCQubitSimulator also apply.
-        emit: Representation to return; defaults to SCNativeProgram.IR_ID.
-            Supported values are QasmSource.IR_ID, LogicalIR.IR_ID,
-            SCProgram.IR_ID, and SCNativeProgram.IR_ID.
+        emit: Stop at one of these representations:
+
+            - ``"qasm.text.v1"`` (`QasmSource.IR_ID`): source text and label
+              before parsing. No passes run.
+            - ``"gate.logical.v1"`` (`LogicalIR.IR_ID`): device-independent
+              gate representation.
+            - ``"sc.gate.v1"`` (`SCProgram.IR_ID`): normalized superconducting
+              gates before routing and lowering to native gates.
+            - ``"sc.native.v1"`` (`SCNativeProgram.IR_ID`, default): gates
+              on physical sites, with a simulator-ready result.
         filename: Optional source label retained on the QasmSource boundary.
             It cannot be supplied when source is already a QasmSource.
         seed: Routing seed, default 0.
 
     Returns:
-        ExecutableCompilationResult at the final native boundary;
-        CompilationResult for an earlier emit boundary.
+        An `ExecutableCompilationResult` at the final native stage, or a
+            `CompilationResult` for inspection at an earlier stage.
 
     Raises:
         TypeError: If source is neither text nor an exact QasmSource.
@@ -196,16 +228,23 @@ def compile_to_sc(
         source: An exact LogicalProgram containing static numeric gates.
         backend: SCTarget or SCQubitSimulator that supplies the capacity and
             coupling graph. The gate rules of an SCQubitSimulator also apply.
-        emit: Representation to return; defaults to SCNativeProgram.IR_ID.
-            Supported values are LogicalProgram.IR_ID, LogicalIR.IR_ID,
-            SCProgram.IR_ID, and SCNativeProgram.IR_ID.
+        emit: Stop at one of these representations:
+
+            - ``"gate.logical.source.v1"`` (`LogicalProgram.IR_ID`): return
+              the input program unchanged. No passes run.
+            - ``"gate.logical.v1"`` (`LogicalIR.IR_ID`): device-independent
+              gate representation.
+            - ``"sc.gate.v1"`` (`SCProgram.IR_ID`): normalized superconducting
+              gates before routing and lowering to native gates.
+            - ``"sc.native.v1"`` (`SCNativeProgram.IR_ID`, default): gates
+              on physical sites, with a simulator-ready result.
         seed: Routing seed, default 0.
 
     Returns:
-        ExecutableCompilationResult at the final boundary; CompilationResult
-        for earlier boundaries. Emitting LogicalProgram.IR_ID runs no passes:
-        the LogicalProgram input is returned unchanged. Static gate and target
-        validation begins at later boundaries.
+        An `ExecutableCompilationResult` at the final stage, or a
+            `CompilationResult` for inspection at an earlier stage. If ``emit`` selects the input ID, the input
+            program is returned unchanged. Static gate and target validation
+            begins at later stages.
 
     Raises:
         ValidationError: If the source type or an IR boundary is invalid.
@@ -256,15 +295,22 @@ def compile_qasm_to_na(
         source: OpenQASM 2 or 3 text, or an existing QasmSource.
         architecture: ZAP architecture mapping, as returned by
             load_architecture.
-        emit: Representation to return; defaults to ZonedPlan.IR_ID.
-            Supported values are QasmSource.IR_ID, LogicalIR.IR_ID,
-            NAProgram.IR_ID, and ZonedPlan.IR_ID.
+        emit: Stop at one of these representations:
+
+            - ``"qasm.text.v1"`` (`QasmSource.IR_ID`): source text and label
+              before parsing. No passes run.
+            - ``"gate.logical.v1"`` (`LogicalIR.IR_ID`): device-independent
+              gate representation.
+            - ``"na.gate.v1"`` (`NAProgram.IR_ID`): neutral-atom gate
+              representation before physical scheduling.
+            - ``"na.zoned.plan.v1"`` (`ZonedPlan.IR_ID`, default): scheduled
+              device operations, with a simulator-ready result.
         filename: Optional source label retained on the QasmSource boundary.
             It cannot be supplied when source is already a QasmSource.
 
     Returns:
-        ExecutableCompilationResult at the final zoned-plan boundary;
-        CompilationResult for an earlier emit boundary.
+        An `ExecutableCompilationResult` at the final zoned-plan stage, or a
+            `CompilationResult` for inspection at an earlier stage.
 
     Raises:
         TypeError: If source is neither text nor an exact QasmSource.
@@ -301,15 +347,22 @@ def compile_to_na(
     Args:
         source: An exact LogicalProgram containing static numeric gates.
         architecture: ZAP architecture mapping, as returned by load_architecture.
-        emit: Representation to return; defaults to ZonedPlan.IR_ID.
-            Supported values are LogicalProgram.IR_ID, LogicalIR.IR_ID,
-            NAProgram.IR_ID, and ZonedPlan.IR_ID.
+        emit: Stop at one of these representations:
+
+            - ``"gate.logical.source.v1"`` (`LogicalProgram.IR_ID`): return
+              the input program unchanged. No passes run.
+            - ``"gate.logical.v1"`` (`LogicalIR.IR_ID`): device-independent
+              gate representation.
+            - ``"na.gate.v1"`` (`NAProgram.IR_ID`): neutral-atom gate
+              representation before physical scheduling.
+            - ``"na.zoned.plan.v1"`` (`ZonedPlan.IR_ID`, default): scheduled
+              device operations, with a simulator-ready result.
 
     Returns:
-        ExecutableCompilationResult at the final boundary; CompilationResult
-        for earlier boundaries. Emitting LogicalProgram.IR_ID runs no passes:
-        the LogicalProgram input is returned unchanged. Static gate and target
-        validation begins at later boundaries.
+        An `ExecutableCompilationResult` at the final stage, or a
+            `CompilationResult` for inspection at an earlier stage. If ``emit`` selects the input ID, the input
+            program is returned unchanged. Static gate and target validation
+            begins at later stages.
 
     Raises:
         ValidationError: If the source type or an IR boundary is invalid.

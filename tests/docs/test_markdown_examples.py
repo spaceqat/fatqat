@@ -8,12 +8,11 @@ a reader working through the page would:
   output must match the text shown on the page;
 - ``python`` blocks only have to run without raising.
 
-Two kinds of blocks are left out. The "Reproduce this figure/output" blocks
+The "Reproduce this figure/output" blocks
 are already executed by the documentation build (``render_guide_figures``) and
-by ``test_guide_cards.py``. A block whose first line is ``# guide-test: skip``
-is an intentional fragment, or needs something CI does not have (Qiskit,
-FFmpeg); the documentation build removes that marker line before rendering, so
-readers never see it.
+by ``test_guide_cards.py``. A block marked ``guide-test: skip`` is a fragment
+or uses a dependency unavailable in the test environment. A block preceded by
+``<!-- guide-test: requires qiskit -->`` runs whenever Qiskit is installed.
 
 The tests run in the normal ``python -m pytest`` session. Run a single page
 with, for example::
@@ -34,7 +33,10 @@ GUIDES = MKDOCS / "en" / "guide"
 # A fenced pycon or python block. A block may be indented, for example inside an
 # admonition or a content tab; its closing fence uses the same indentation.
 CODE_BLOCK = re.compile(
-    r"^(?P<indent>[ \t]*)```(?P<language>pycon|python)[ \t]*\n"
+    r"^(?P<indent>[ \t]*)"
+    r"(?:<!-- guide-test: (?P<directive>skip|requires [A-Za-z_][A-Za-z_0-9]*) -->[ \t]*\n"
+    r"(?P=indent))?"
+    r"```(?P<language>pycon|python)[ \t]*\n"
     r"(?P<body>.*?)^(?P=indent)```[ \t]*$",
     re.DOTALL | re.MULTILINE,
 )
@@ -62,8 +64,8 @@ def _load_figure_renderer():
 REPRODUCTION = _load_figure_renderer().REPRODUCTION
 
 
-def _code_blocks(page: Path) -> list[tuple[int, str, str]]:
-    """Return ``(line, language, code)`` for each candidate block, in page order.
+def _code_blocks(page: Path) -> list[tuple[int, str, str, str | None]]:
+    """Return ``(line, language, code, directive)`` for each block in page order.
 
     ``line`` is the page line of the block's first code line, used in error
     locations. ``code`` has the block's indentation removed. Skip-marked blocks
@@ -80,8 +82,8 @@ def _code_blocks(page: Path) -> list[tuple[int, str, str]]:
         code = "\n".join(
             line.removeprefix(indent) for line in match.group("body").splitlines()
         )
-        line = text.count("\n", 0, match.start()) + 2
-        blocks.append((line, match.group("language"), code))
+        line = text.count("\n", 0, match.start("body")) + 1
+        blocks.append((line, match.group("language"), code, match.group("directive")))
     return blocks
 
 
@@ -102,8 +104,10 @@ def test_guide_examples_run_and_match_their_output(page, tmp_path, monkeypatch):
     parser = doctest.DocTestParser()
     runner = doctest.DocTestRunner(optionflags=OPTIONS)
     try:
-        for line, language, code in _code_blocks(page):
-            if code.partition("\n")[0].strip() == SKIP_MARKER:
+        for line, language, code, directive in _code_blocks(page):
+            if directive == "skip" or code.partition("\n")[0].strip() == SKIP_MARKER:
+                continue
+            if directive and importlib.util.find_spec(directive.split()[1]) is None:
                 continue
             location = f"{page.name}:{line}"
             if language == "python":

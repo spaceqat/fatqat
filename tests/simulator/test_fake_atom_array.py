@@ -11,7 +11,12 @@ from fatqat.simulator._engine._execution_policy import _select_execution_path
 
 import fatqat.operations as ops
 from fatqat._backends.steps import ApplyMatrixStep, LossStep, PutStep
-from fatqat.simulator import AtomArraySimulator, Simulator
+from fatqat.simulator import (
+    AtomArraySimulator,
+    ClassicalState,
+    EvolutionState,
+    Simulator,
+)
 from fatqat.errors import BackendValidationError, UnsupportedOperationError
 from fatqat.noise import (
     AmplitudeDamping,
@@ -170,7 +175,7 @@ def test_lost_atom_on_a_paired_cz_is_dropped_silently_not_raised():
     assert len(_two_qubit_matrix_steps(plan)) == 1  # kept at lowering
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(p, shots=10, simulation_config={"seed": 0})
+        .run(p, shots=10, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -314,7 +319,7 @@ def test_gate_before_put_executes_while_empty(runtime):
 
     backend = AtomArraySimulator(runtime=runtime)
     counts = (
-        backend.run(program, shots=8, simulation_config={"seed": 0})
+        backend.run(program, shots=8, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -324,7 +329,7 @@ def test_gate_before_put_executes_while_empty(runtime):
     # The previous run left the atom loaded; the next run starts empty again.
     empty = Program(1, 1)
     empty.measure(0, 0)
-    counts = backend.run(empty, shots=8, simulation_config={"seed": 0})
+    counts = backend.run(empty, shots=8, execution_config={"seed": 0})
     assert counts.result().get_counts() == {"2": 8}
 
 
@@ -365,7 +370,7 @@ def test_program_without_put_reports_every_atom_missing():
     p.measure_all()
     counts = (
         AtomArraySimulator()
-        .run(p, shots=4, simulation_config={"seed": 0})
+        .run(p, shots=4, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -382,7 +387,7 @@ def test_empty_site_erasure_is_not_encoded_in_final_state():
             program,
             shots=1,
             result_config={"counts": True, "final_state": True},
-            simulation_config={"seed": 0},
+            execution_config={"seed": 0},
         )
         .result()
     )
@@ -446,7 +451,7 @@ def test_measurement_of_empty_site_reads_erasure():
     p.measure(1, 0)
     counts = (
         AtomArraySimulator()
-        .run(p, shots=4, result_config={"counts": True}, simulation_config={"seed": 0})
+        .run(p, shots=4, result_config={"counts": True}, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -465,7 +470,7 @@ def test_empty_site_erasure_bypasses_readout_noise():
     p.measure(1, 0)
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(p, shots=4, result_config={"counts": True}, simulation_config={"seed": 0})
+        .run(p, shots=4, result_config={"counts": True}, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -483,7 +488,7 @@ def test_put_restores_a_lost_site():
     p.measure(0, 0)
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(p, shots=8, simulation_config={"seed": 0})
+        .run(p, shots=8, execution_config={"seed": 0})
         .result()
         .get_counts()
     )
@@ -503,7 +508,7 @@ def test_put_on_occupied_site_is_a_noop():
     def counts(p):
         return (
             AtomArraySimulator()
-            .run(p, shots=8, simulation_config={"seed": 0})
+            .run(p, shots=8, execution_config={"seed": 0})
             .result()
             .get_counts()
         )
@@ -524,7 +529,7 @@ def test_process_workers_preserve_initial_atom_occupancy():
             backend.run(
                 program,
                 shots=8,
-                simulation_config={
+                execution_config={
                     "seed": 7,
                     "shot_parallelism": shot_parallelism,
                     "kernel_parallelism": "serial",
@@ -538,6 +543,64 @@ def test_process_workers_preserve_initial_atom_occupancy():
     # Empty occupancy skips RX, then Put loads |0>. Dropping the explicit
     # occupancy seed in a worker would apply RX first and report 1 instead.
     assert counts("processes") == counts("serial") == {"0": 8}
+
+
+def test_compiled_atom_trajectories_match_the_python_workflow():
+    # Serial and threaded Numba shots run the compiled trajectory loop; Numba
+    # process workers and NumPy run the Python workflow. Each shot uses its own
+    # seed stream, so the routes agree only if loss, reload, and reset draws
+    # happen in the same order and change the same later outcomes.
+    pytest.importorskip("numba")
+    from fatqat.simulator._engine.engines import numba_engine as nb
+
+    noise = NoiseModel()
+    noise.add(Loss(p=0.3), operation=ops.RX)
+    noise.add(Loss(p=0.2), operation=ops.Put)
+    noise.add(Depolarizing(p=0.3), operation=ops.CZ, target_positions=0)
+    noise.add(ReadoutConfusion(np.array([[0.9, 0.2], [0.1, 0.8]])), targets=2)
+    program = Program(4, 4)
+    program.add(ops.RX(np.pi / 2), 0)
+    program.add(ops.RX(np.pi / 2), 2)
+    program.add(ops.Put, 1)
+    program.add(ops.RX(np.pi / 3), 1)
+    program.add(ops.Pair, (0, 1))
+    # Local noise on site 0 still applies when its partner is gone.
+    program.add(ops.CZ, (0, 1))
+    program.measure(0, 0)
+    program.add(ops.Put, 0)  # reloads site 0 only if it was lost
+    program.add(ops.RX(np.pi / 2), 0, condition=(0, 1))
+    program.add(ops.Put, 3, condition=(0, 0))  # otherwise site 3 stays empty
+    program.add(ops.RX(np.pi / 4), 3)
+    program.measure((0, 1, 2, 3), (0, 1, 2, 3))
+    initial = EvolutionState(classical=ClassicalState(occupied={0, 2}))
+
+    def counts(runtime, shot_parallelism):
+        return (
+            AtomArraySimulator(runtime=runtime, noise=noise)
+            .run(
+                program,
+                shots=150,
+                initial_state=initial,
+                execution_config={
+                    "seed": 2026,
+                    "shot_parallelism": shot_parallelism,
+                    "kernel_parallelism": "serial",
+                    "max_workers": 1 if shot_parallelism == "serial" else 2,
+                },
+            )
+            .result()
+            .get_counts()
+        )
+
+    reference = counts("numba", "processes")
+    assert counts("numpy", "serial") == reference
+    assert counts("numba", "serial") == reference
+    if nb._MAX_THREADS >= 2:
+        assert counts("numba", "threads") == reference
+    # The run must be stochastic and report both lost and never-loaded sites.
+    assert len(reference) > 10
+    assert any(key[0] == "2" for key in reference)
+    assert any(key[-1] == "2" for key in reference)
 
 
 # --- atom loss ----------------------------------------------------------------
@@ -567,7 +630,7 @@ def test_cz_local_relaxation_with_absent_partner(
     program.measure(1 - survivor, 1)
     counts = (
         AtomArraySimulator(runtime=runtime, method=method, noise=noise)
-        .run(program, shots=8, simulation_config={"seed": 23})
+        .run(program, shots=8, execution_config={"seed": 23})
         .result()
         .get_counts()
     )
@@ -604,7 +667,7 @@ def test_atom_array_accepts_local_channels_on_cz(channel):
     program.measure(1, 0)
     counts = (
         AtomArraySimulator(noise=noise)
-        .run(program, shots=64, simulation_config={"seed": 23})
+        .run(program, shots=64, execution_config={"seed": 23})
         .result()
         .get_counts()
     )
@@ -624,7 +687,7 @@ def test_atom_loss_ejects_the_atom(runtime):
     p.measure(0, 0)
     counts = (
         AtomArraySimulator(runtime=runtime, noise=noise)
-        .run(p, shots=10, simulation_config={"seed": 0})
+        .run(p, shots=10, execution_config={"seed": 0})
         .result()
         .get_counts()
     )

@@ -27,7 +27,7 @@ def test_real_process_shots_return_counts_with_serial_children():
         .run(
             _random_dynamic_program(),
             shots=8,
-            simulation_config={
+            execution_config={
                 "seed": 5,
                 "shot_parallelism": "processes",
                 "kernel_parallelism": "serial",
@@ -55,7 +55,7 @@ def test_auto_execution_without_process_support():
     backend._engine = LocalEngine()
     config = {"seed": 5, "shot_parallelism": "auto", "max_workers": 2}
     program = _random_dynamic_program()
-    result = backend.run(program, shots=64, simulation_config=config).result()
+    result = backend.run(program, shots=64, execution_config=config).result()
     assert sum(result.get_counts().values()) == 64
     assert set(result.get_counts()) <= {"00", "11"}
 
@@ -85,7 +85,7 @@ def test_workers_preserve_configuration_without_copying_runtime_state():
     result = backend.run(
         program,
         shots=8,
-        simulation_config={
+        execution_config={
             "seed": 5,
             "shot_parallelism": "processes",
             "max_workers": 2,

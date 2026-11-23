@@ -1,51 +1,61 @@
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/spaceqat/fatqat/main/docs/mkdocs/en/assets/images/space-qat-logo.png" alt="" width="120">
+
 # FatQat
 
-English | [简体中文](README.zh-CN.md)
+**One Program, from algorithm to hardware.**
 
-FatQat is a quantum-computing toolkit built around one authoring interface:
-`Program`. Write the computation once, then choose how closely to model the
-machine beneath it.
+[![Tests](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/fatqat)](https://pypi.org/project/fatqat/)
+[![Python](https://img.shields.io/pypi/pyversions/fatqat)](https://pypi.org/project/fatqat/)
+[![Documentation](https://img.shields.io/readthedocs/fatqat)](https://fatqat.readthedocs.io/en/latest/)
+[![License](https://img.shields.io/pypi/l/fatqat)](https://github.com/spaceqat/fatqat/blob/main/LICENSE)
 
-> **Development status:** FatQat is under active development, and its interfaces
-> may change between releases. Pin an exact version when reproducibility matters.
+[Quickstart](https://fatqat.readthedocs.io/en/latest/guide/quickstart/) · [Documentation](https://fatqat.readthedocs.io/en/latest/) · [Case studies](https://fatqat.readthedocs.io/en/latest/tutorials/)
 
-| Execution level | Start here when you want to… |
+English | [简体中文](https://github.com/spaceqat/fatqat/blob/main/README.zh-CN.md) | [한국어](https://github.com/spaceqat/fatqat/blob/main/README-KR.md)
+
+</div>
+
+FatQat is a Python toolkit for building, compiling, and running quantum
+programs. Write a `Program` once and run it through the same interface on every
+backend, from an ideal simulator to a physical model of the device.
+
+- **Algorithm developers** test their algorithms under realistic device
+  conditions and prepare them for hardware execution.
+- **Hardware engineers** simulate how their devices respond to controls,
+  coupling, and noise, and find what limits performance.
+- **Students** learn quantum computing hands-on, from first circuits to the
+  physics of real devices, through guided examples and case studies.
+
+The current backends offer three levels of physical detail:
+
+| Model | Question it answers |
 | --- | --- |
-| General simulation | study logical states, samples, observables, noise, or parameter sweeps |
-| Hardware-profile simulation | check native operations, placement, connectivity, capacity, or atom occupancy |
-| Hamiltonian emulation | follow pulses, coupling, leakage, timing, and continuous-time noise |
+| General simulation | Does the algorithm work, and how does noise change it? |
+| Hardware-profile simulation | Does it fit the device's native gates, connectivity, and atom occupancy? |
+| Hamiltonian emulation | What happens during the pulses: leakage, coupling, and timing? |
 
-The execution targets accept the same `Program` type and return results through
-the same `Job`/`Result` workflow. Each target still validates what it can
-physically or mathematically realize.
+A `Program` is more than a gate circuit. It can hold:
 
-## [If AI can write the code, where can I make the biggest difference?](https://fatqat.readthedocs.io/en/latest/contributing/contributing-in-the-ai-era/)
+- gates, mid-circuit measurement, feedforward, and parameters on qubits,
+  qudits, or optical modes;
+- device operations such as loading, pairing, and losing atoms;
+- control pulses written directly, alongside calibrated gates.
 
-**AI makes code easier to write. Your questions, judgment, and reviews help make it worth writing.**
+FatQat also compiles logical circuits for superconducting and neutral-atom
+targets, and exchanges circuits with OpenQASM and Qiskit.
 
-Ask a useful question, share a problem, review a design, improve an explanation,
-or contribute code.
-**[Read the contribution guide →](https://fatqat.readthedocs.io/en/latest/contributing/contributing-in-the-ai-era/)**
+## Install
 
-## Installation
-
-FatQat requires Python 3.12 or newer. Install FatQat:
+FatQat requires Python 3.12 or newer:
 
 ```sh
 python -m pip install fatqat
 ```
 
-To work on the development version, install from a source checkout:
-
-```sh
-git clone https://github.com/spaceqat/fatqat.git
-cd fatqat
-python -m pip install .
-```
-
 ## Run a first Program
-
-This Bell-state example contains the complete circuit-level workflow:
 
 ```python
 import fatqat as fq
@@ -56,87 +66,32 @@ program.add(ops.H, 0)
 program.add(ops.CX, (0, 1))
 program.measure_all()
 
-result = fq.simulator.Simulator().run(
-    program,
-    shots=1000,
-    simulation_config={"seed": 7},
-).result()
-
-print(result.get_counts())
+result = fq.simulator.Simulator().run(program, shots=1000).result()
+print(result.get_counts())  # only '00' and '11'
 ```
 
-Only `00` and `11` appear: the measured bits agree because the two qubits are
-entangled. The
-[quickstart](https://fatqat.readthedocs.io/en/latest/guide/quickstart/)
-draws this Program, runs it, and turns the counts into a plot.
+## Learn more
 
-## Grow the same authoring model
-
-`Program` records registers and ordered instructions. It supports gates,
-measurement, reset, classical conditions, reusable parameters, logical qudits,
-mixed local dimensions, circuit drawing, and direct physical controls. These
-features stay together instead of splitting into separate circuit and pulse
-languages.
-
-The
-[Program guide](https://fatqat.readthedocs.io/en/latest/guide/program/)
-builds those ideas step by step.
-[Choose how much physics to model](https://fatqat.readthedocs.io/en/latest/guide/execution-models/)
-then runs one unchanged rotation through all three execution levels.
-
-From there:
-
-- [Simulate a quantum program](https://fatqat.readthedocs.io/en/latest/guide/simulation/) for states,
-  sampling, and parameter sweeps.
-- [Ask questions of a run](https://fatqat.readthedocs.io/en/latest/guide/interpret-results/) for counts,
-  states, maps, and observables.
-- [Compare ideal and noisy execution](https://fatqat.readthedocs.io/en/latest/guide/ideal-and-noisy/).
-- [Measure performance and scaling](https://fatqat.readthedocs.io/en/latest/guide/performance/).
-- [Test a hardware profile](https://fatqat.readthedocs.io/en/latest/guide/hardware-profile-simulation/).
-- [Follow a Program into physical dynamics](https://fatqat.readthedocs.io/en/latest/guide/hamiltonian-emulation/),
-  then continue with the transmon or neutral-atom workflow.
-- [Connect OpenQASM and Qiskit](https://fatqat.readthedocs.io/en/latest/guide/interoperability/).
-
-The [tutorial gallery](https://fatqat.readthedocs.io/en/latest/tutorials/)
-contains longer algorithm and physics case studies. The
-[API reference](https://fatqat.readthedocs.io/en/latest/api/)
-contains the exact signatures, supported operations, shapes, units, and
-validation contracts.
+- [Quickstart](https://fatqat.readthedocs.io/en/latest/guide/quickstart/):
+  build, draw, and run a first Program.
+- [User guide](https://fatqat.readthedocs.io/en/latest/guide/):
+  simulation, hardware constraints, and pulse dynamics, task by task.
+- [Case studies](https://fatqat.readthedocs.io/en/latest/tutorials/):
+  error correction, quantum simulation, optimization, and pulse control.
+- [API reference](https://fatqat.readthedocs.io/en/latest/api/):
+  exact signatures, units, and validation rules.
 
 Release notes are in the
 [changelog](https://github.com/spaceqat/fatqat/blob/main/CHANGELOG.md).
 
-## Development
+## Contribute
 
-For basic local development, install the source tree with the core test
-dependencies:
+AI makes code easier to write. Your questions, use cases, and reviews help
+decide what is worth writing.
+[Read how you can make a difference](https://fatqat.readthedocs.io/en/latest/contributing/contributing-in-the-ai-era/),
+then see
+[Contributing to FatQat](https://github.com/spaceqat/fatqat/blob/main/CONTRIBUTING.md)
+for development setup and the policy on AI-assisted work.
 
-```sh
-python -m pip install --upgrade pip
-python -m pip install --editable . --group dev
-python -m pytest
-```
-
-Before preparing a contribution, install the full test and lint environment:
-
-```sh
-python -m pip install --editable . --group test-full --group lint
-```
-
-`test-full` includes the `dev` dependencies and the optional Qiskit integration
-dependencies. `lint` adds Black and Pylint.
-
-Before submitting a change, read
-[Contributing to FatQat](https://github.com/spaceqat/fatqat/blob/main/CONTRIBUTING.md),
-including the policy for AI-assisted work. AI tools are permitted, but every
-contributor must understand, own, and lead the work they submit and the project
-conversations around it.
-
-For documentation changes, follow the
-[pinned setup and build workflow](https://github.com/spaceqat/fatqat/blob/main/docs/mkdocs/README.md).
-
-The main repository directories are:
-
-- `src/fatqat/` — package source.
-- `tests/` — behavior-focused test suite.
-- `docs/mkdocs/` — Material user guide, executable tutorials, and API reference.
+FatQat is licensed under the
+[Apache License 2.0](https://github.com/spaceqat/fatqat/blob/main/LICENSE).

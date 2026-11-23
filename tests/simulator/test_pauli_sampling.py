@@ -66,7 +66,7 @@ def _counts(runtime, noise, program, shots=2000, seed=7):
         .run(
             program,
             shots=shots,
-            simulation_config={
+            execution_config={
                 "seed": seed,
                 "shot_parallelism": "serial",
                 "kernel_parallelism": "serial",
@@ -212,7 +212,7 @@ def test_statevector_pauli_sampling_matches_the_density_matrix(runtime):
     sampled = _counts(_runtime(runtime), noise, program, shots=shots)
     exact = (
         Simulator("DM", noise=noise)
-        .run(program, shots=shots, simulation_config={"seed": 7})
+        .run(program, shots=shots, execution_config={"seed": 7})
         .result()
         .get_counts()
     )
@@ -245,7 +245,7 @@ def test_a_mixed_plan_routes_each_channel_independently(runtime):
     sampled = _counts(_runtime(runtime), noise, program, shots=shots)
     exact = (
         Simulator("DM", noise=noise)
-        .run(program, shots=shots, simulation_config={"seed": 7})
+        .run(program, shots=shots, execution_config={"seed": 7})
         .result()
         .get_counts()
     )
@@ -277,7 +277,7 @@ def test_a_custom_non_unitary_channel_rule_still_runs():
 
     counts = (
         Simulator("SV", noise=noise, implementation_map=channel_map)
-        .run(program, shots=512, simulation_config={"seed": 3})
+        .run(program, shots=512, execution_config={"seed": 3})
         .result()
         .get_counts()
     )
@@ -294,7 +294,7 @@ def test_pauli_channel_process_batches_match_serial():
         .run(
             program,
             shots=8,
-            simulation_config={
+            execution_config={
                 "seed": 13,
                 "shot_parallelism": "processes",
                 "kernel_parallelism": "serial",

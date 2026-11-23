@@ -19,8 +19,9 @@ theme:
   custom_dir: docs/mkdocs/overrides
   language: en
   font: false
+  logo: assets/images/space-qat-logo.png
+  favicon: assets/images/space-qat-logo.png
   icon:
-    logo: material/atom-variant
     repo: fontawesome/brands/github
   palette:
     - media: "(prefers-color-scheme: light)"
@@ -68,6 +69,9 @@ extra:
     - name: 简体中文
       link: https://fatqat.readthedocs.io/zh-cn/
       lang: zh-CN
+    - name: 한국어
+      link: https://fatqat.readthedocs.io/ko/
+      lang: ko
 
 # Keep autorefs before mkdocstrings.
 plugins:
@@ -91,7 +95,7 @@ plugins:
           extensions:
             - docs/mkdocs/extensions/docstring_roles.py:DocstringRolesExtension
           filters: public
-          inherited_members: true
+          inherited_members: true  # Docstring-only blocks set both members and inherited_members to false.
           members_order: source
           merge_init_into_class: true
           separate_signature: true
@@ -146,56 +150,80 @@ nav:
   - Home: index.md
   - User guide:
       - guide/index.md
-      - Start with one program:
+      - Get started:
           - Quickstart: guide/quickstart.md
-          - Programs and registers: guide/program.md
-          - Compile and run a logical circuit: guide/compiler.md
-          - Execution models: guide/execution-models.md
-      - Run and analyze programs:
-          - Simulation: guide/simulation.md
+          - Program & Register: guide/program.md
+          - Simulation choices: guide/execution-models.md
+      - Run & analyze:
+          - Simulate programs: guide/simulation.md
           - Estimate observables: guide/interpret-results.md
           - Ideal and noisy runs: guide/ideal-and-noisy.md
-          - Visualization: guide/visualization.md
-          - Performance: guide/performance.md
-      - Model hardware and physics:
-          - Hardware-profile simulation: guide/hardware-profile-simulation.md
-          - Linear optics simulation: guide/linear-optics.md
-          - Hamiltonian emulation: guide/hamiltonian-emulation.md
+          - Visualize results: guide/visualization.md
+          - Improve performance: guide/performance.md
+      - Hardware constraints:
+          - Hardware overview: guide/hardware-constraints.md
+          - Superconducting qubits: guide/superconducting-simulation.md
+          - Neutral-atom arrays: guide/atom-array-simulation.md
+          - Linear optics: guide/linear-optics.md
+          - Compile circuits: guide/compiler.md
+      - Hamiltonian emulation:
+          - Pulse programs: guide/hamiltonian-emulation.md
           - Transmon emulation: guide/transmon-emulation.md
           - Neutral-atom emulation: guide/neutral-atom-emulation.md
-      - Connect and diagnose:
-          - Interoperability: guide/interoperability.md
+      - Connect & debug:
+          - OpenQASM & Qiskit: guide/interoperability.md
           - Troubleshooting: guide/troubleshooting.md
-  - Tutorials:
+  - Case studies:
       - tutorials/index.md
+      - Circuits and entanglement:
+          - Eight-atom GHZ: tutorials/atom-array-ghz8.md
+          - Qutrit-assisted Toffoli: tutorials/qutrit-assisted-toffoli.md
+      - Error correction:
+          - Atom loss in repetition codes: tutorials/atom-loss-erasure.md
+          - Surface-code memory: tutorials/surface-code-memory.md
+      - Quantum simulation:
+          - Rydberg spin correlations: tutorials/antiferromagnetic-chain.md
+          - PXP state revivals: tutorials/pxp-z2-revival.md
+          - H₂ ground-state energy: tutorials/vqe-h2.md
+      - Combinatorial optimization:
+          - QUBO with QAOA: tutorials/qubo-qaoa.md
+          - Grid islanding model: tutorials/islanding-model.md
+          - Grid splitting with QAOA: tutorials/islanding-qaoa.md
+      - Quantum machine learning:
+          - QNN digit recognition: tutorials/qnn-digits.md
+          - ADMET circuit search: tutorials/quantum-admet.md
+      - Pulse control and calibration:
+          - Gate calibration: tutorials/pulse-calibration.md
+          - Rydberg CZ pulses: tutorials/optimal-cz-control.md
   - API reference:
       - api/index.md
       - Build programs:
           - Program: api/program.md
+          - Registers: api/registers.md
           - LogicalProgram: api/logical-program.md
           - Compiler:
               - api/compiler.md
-              - SC target: api/sc-target.md
-          - Registers: api/registers.md
+              - SCTarget: api/sc-target.md
+              - "Compiler pipelines & IR": api/compiler-pipelines.md
           - Operations:
               - api/operations.md
               - Qubit gates: api/operations/qubit-gates.md
               - Qudit gates: api/operations/qudit-gates.md
-              - Atom gates: api/operations/atom-gates.md
               - Optical gates: api/operations/optical-gates.md
-              - Structural operations: api/operations/structural.md
+              - Atom-array operations: api/operations/atom-gates.md
+              - "Measure, reset & barrier": api/operations/structural.md
           - Pulse control:
               - api/pulse-control/index.md
-              - Pulse operation: api/pulse-control/pulse-operation.md
-              - Pulse control: api/pulse-control/pulse-control.md
-              - Sampled waveform: api/pulse-control/sampled-waveform.md
-              - Gate realization: api/pulse-control/gate-realization.md
+              - SampledWaveform: api/pulse-control/sampled-waveform.md
+              - PulseControl: api/pulse-control/pulse-control.md
+              - PulseOperation: api/pulse-control/pulse-operation.md
+              - Custom gate pulses: api/pulse-control/gate-realization.md
       - Run and inspect:
           - Simulators:
               - api/simulators/index.md
               - General simulator: api/simulator.md
-              - Superconducting profile: api/simulators/sc-qubit.md
-              - Atom-array profile: api/simulators/atom-array.md
+              - SC qubits: api/simulators/sc-qubit.md
+              - Atom arrays: api/simulators/atom-array.md
               - Linear optics: api/simulators/linear-optics.md
               - Custom operations: api/simulators/custom-operations.md
           - Emulators:
@@ -220,14 +248,18 @@ nav:
           - Job: api/job.md
           - Result: api/result.md
       - Integrate and extend:
-          - Interoperability:
+          - OpenQASM & Qiskit:
               - api/interoperability/index.md
               - OpenQASM: api/interoperability/openqasm.md
               - Qiskit: api/interoperability/qiskit.md
-          - Implementation maps: api/implementation.md
+          - Matrix implementation maps: api/implementation.md
       - Errors and stability:
           - Exceptions: api/exceptions.md
           - Experimental APIs: api/experimental.md
-  - How to contribute:
-      - Contributing in the AI era: contributing/contributing-in-the-ai-era.md
-      - How to work on an issue: contributing/how-to-work-on-an-issue.md
+  - Contributing and development:
+      - How to contribute:
+          - Contributing in the AI era: contributing/contributing-in-the-ai-era.md
+          - How to work on an issue: contributing/how-to-work-on-an-issue.md
+      - Developer guide:
+          - Writing documentation: development/writing-documentation.md
+          - Making a release: development/releasing.md

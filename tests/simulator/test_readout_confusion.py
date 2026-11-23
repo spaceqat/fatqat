@@ -108,7 +108,7 @@ def test_fast_path_counts_reproduce_the_confusion_rate(method):
     shots = 10_000
     counts = (
         Simulator(method=method, noise=_readout_model(_FLIP_30))
-        .run(_measured_program(), shots=shots, simulation_config={"seed": 2})
+        .run(_measured_program(), shots=shots, execution_config={"seed": 2})
         .result()
         .get_counts()
     )
@@ -128,7 +128,7 @@ def test_specific_target_confuses_only_its_subsystem():
     program.measure((0, 1), (0, 1))
     counts = (
         Simulator(noise=_readout_model(always_flip, target=1))
-        .run(program, shots=200, simulation_config={"seed": 4})
+        .run(program, shots=200, execution_config={"seed": 4})
         .result()
         .get_counts()
     )
@@ -148,7 +148,7 @@ def test_feedforward_reads_the_reported_bit_not_the_true_one():
     program.measure(1, 1)
     counts = (
         Simulator(method="SV", noise=_readout_model(_ALWAYS_ONE, target=0))
-        .run(program, shots=100, simulation_config={"seed": 3})
+        .run(program, shots=100, execution_config={"seed": 3})
         .result()
         .get_counts()
     )
@@ -165,7 +165,7 @@ def test_collapse_and_state_export_keep_the_true_outcome():
         .run(
             program,
             shots=1,
-            simulation_config={"seed": 5},
+            execution_config={"seed": 5},
             result_config={"counts": True, "final_state": True},
         )
         .result()
@@ -190,7 +190,7 @@ def test_reused_qubit_evolves_from_the_true_state():
     program.measure(0, 1)
     counts = (
         Simulator(method="SV", noise=noise)
-        .run(program, shots=50, simulation_config={"seed": 6})
+        .run(program, shots=50, execution_config={"seed": 6})
         .result()
         .get_counts()
     )
@@ -214,7 +214,7 @@ def test_threaded_compiled_shots_match_serial_with_readout_confusion():
         .run(
             program,
             shots=8,
-            simulation_config={
+            execution_config={
                 "seed": 13,
                 "shot_parallelism": "serial",
                 "kernel_parallelism": "serial",
@@ -228,7 +228,7 @@ def test_threaded_compiled_shots_match_serial_with_readout_confusion():
         .run(
             program,
             shots=8,
-            simulation_config={
+            execution_config={
                 "seed": 13,
                 "shot_parallelism": "threads",
                 "kernel_parallelism": "serial",
@@ -259,7 +259,7 @@ def test_numba_compiled_multi_shot_kernel_applies_readout_confusion():
     for runtime in ("numpy", "numba"):
         counts[runtime] = (
             Simulator(method="SV", runtime=runtime, noise=noise)
-            .run(program, shots=64, simulation_config={"seed": 5})
+            .run(program, shots=64, execution_config={"seed": 5})
             .result()
             .get_counts()
         )
@@ -291,7 +291,7 @@ def test_numba_compiled_multi_shot_matches_numpy_on_a_qudit_confusion_plan():
         program.measure(qreg[1], creg[1])
         return (
             Simulator(method="SV", runtime=runtime, noise=noise)
-            .run(program, shots=300, simulation_config={"seed": 21})
+            .run(program, shots=300, execution_config={"seed": 21})
             .result()
             .get_counts()
         )
@@ -318,7 +318,7 @@ def test_numba_partially_confused_measurement_only_draws_where_attached():
 
     counts = {
         runtime: Simulator(method="SV", runtime=runtime, noise=noise)
-        .run(program, shots=200, simulation_config={"seed": 8})
+        .run(program, shots=200, execution_config={"seed": 8})
         .result()
         .get_counts()
         for runtime in ("numpy", "numba")

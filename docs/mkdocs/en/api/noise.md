@@ -4,25 +4,19 @@ title: "Noise"
 
 # Noise
 
+Use a `NoiseModel` to vary the noise in a run while keeping the same
+[`Program`][fatqat.Program]. Simulators can apply a channel after an operation.
+Pulse emulators can evolve the state with continuous noise, including during idle
+time. Readout confusion changes the reported digits in either case.
 
-FatQat keeps noise separate from [`Program`][fatqat.Program]. Add the noise
-sources you need to a [`NoiseModel`][fatqat.NoiseModel], then pass that model to a
-compatible simulator or emulator with `noise=...`. You can reuse the same
-program for ideal and noisy runs.
-
-See [Compare the same Program ideally and noisily](../guide/ideal-and-noisy.md) for a controlled ideal-versus-noisy
-comparison. This section is the reference for selectors, support, units, and
-validation.
-
-Noise types live in `fatqat.noise`. `NoiseModel` is also available as
-`fatqat.NoiseModel`.
+Noise types are available in `fatqat.noise`. Pass a
+[`NoiseModel`][fatqat.NoiseModel] to the backend with `noise=...`.
 
 ## Choose a noise type
 
-
-Probabilities describe one simulator channel application after a matched
-operation. Rates and relaxation times describe local Lindblad operators that
-act over emulator time. Backends do not convert between these forms.
+Choose a type by the effect you want to model. For a type with both forms, use a
+probability for a single channel application or a rate or relaxation time for
+continuous evolution. Follow the definition for your backend on the type's page.
 
 **Built-in noise types**
 
@@ -43,64 +37,49 @@ its parameters, units, and mathematical definition.
 
 ## Backend support
 
-
-Support depends on the noise form, where it applies, and the backend. The
-[Backend support](noise/backend-support.md#noise-backend-support) tables show the built-in behavior and unsupported
-forms for each backend family. Pulse-emulator continuous-noise realizations are
-family-owned rather than user-replaceable.
+Check [Backend support](noise/backend-support.md#noise-backend-support) for the
+forms, scopes, and target dimensions your backend accepts.
 
 ## Quick start
 
+### After an operation
 
-This model adds a joint channel after every `CX` and then applies binary
-readout confusion to every measurement:
+Pass `operation=ops.CX` to apply a depolarizing channel jointly to the two
+operands after each `CX`. For a full comparison, see [Ideal and noisy
+runs](../guide/ideal-and-noisy.md).
 
 ```python
-import numpy as np
 import fatqat as fq
 import fatqat.operations as ops
 
 noise = fq.NoiseModel()
 noise.add(fq.noise.Depolarizing(p=0.05), operation=ops.CX)
-noise.add(
-    fq.noise.ReadoutConfusion(
-        np.array([[0.98, 0.04], [0.02, 0.96]])
-    )
-)
-
-backend = fq.simulator.Simulator(method="density_matrix", noise=noise)
+simulator = fq.simulator.Simulator(method="density_matrix", noise=noise)
 ```
 
-For a pulse backend, express rates and relaxation times in the model's time
-unit. For example, the reference transmon model uses device labels such as
-`"q0"`. This relaxation noise stays active there throughout elapsed pulse
-time:
+### During pulse evolution
+
+Omit `operation` to keep relaxation active on `"q0"` throughout the elapsed time,
+including idle periods. The reference transmon model uses nanoseconds, so `rate`
+is in inverse nanoseconds.
 
 ```python
-pulse_noise = fq.NoiseModel()
-pulse_noise.add(
+import fatqat as fq
+from fatqat.emulator import TransmonEmulator, TransmonModel, load_model_document
+
+model = TransmonModel.from_document(load_model_document("transmon.reference"))
+noise = fq.NoiseModel()
+noise.add(
     fq.noise.TransitionRelaxation(
-        rate=1 / 60_000.0,
-        coefficients={(1, 0): 1.0, (2, 1): 2**0.5},
+        rate=1 / 60_000,
+        coefficients={(1, 0): 1, (2, 1): 2**0.5},
     ),
     targets="q0",
 )
-pulse_noise.add(
-    fq.noise.PhaseDamping(
-        rate=1 / 80_000.0 - 1 / (2 * 60_000.0),
-    ),
-    targets="q0",
-)
+emulator = TransmonEmulator(model, method="density_matrix", noise=noise)
 ```
 
-The reference transmon model uses nanoseconds, while the neutral-atom model
-uses microseconds. Check the chosen model's `time_unit` instead of inferring a
-unit from the size of a value: see
-[`time_unit`][fatqat.emulator.TransmonModel.time_unit] and
-[`time_unit`][fatqat.emulator.Atom2LevelModel.time_unit].
-
 ## API pages
-
 
 - [Noise model](noise/model.md)
 - [Backend support](noise/backend-support.md)

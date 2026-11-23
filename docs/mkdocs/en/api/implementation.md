@@ -1,33 +1,32 @@
 ---
-title: "Implementation maps"
+title: "Matrix implementation maps"
 ---
 
-# Implementation maps
+# Matrix implementation maps { #implementation-maps }
 
+When a simulator encounters a gate, its implementation map determines which matrix
+to apply. With
+[`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap], you
+can add a rule, change a built-in one, or use different matrices for the same gate
+at different device locations. Pass the map as `implementation_map` when you
+create the simulator. The map also supplies channel rules. The `NoiseModel`
+determines when a channel acts and which targets it affects.
 
-Use [`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap] to add custom
-operations and channels to a simulator, or choose rules by physical target. Pass
-the map as `implementation_map=` when constructing the backend. Built-in
-gates and channels work without a custom map. Noise placement is still defined
-by `NoiseModel`; the map supplies how each matched channel acts.
+## Choose a starting map { #choose-a-map }
 
-## Choose a map
-
-
-[`default_matrix_implementation_map`][fatqat.implementation.default_matrix_implementation_map] returns a
-fresh map containing FATQAT's built-in matrix gates and finite channel rules. Editing it does not affect
-another map or a later call. Construct
-[`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap] directly when the
-backend should support only rules you add. A supplied map replaces both the
-gate and channel registrations; start with the default map to retain built-ins.
+To keep the built-in gate and channel rules, start with
+[`default_matrix_implementation_map()`][fatqat.implementation.default_matrix_implementation_map].
+To provide every rule yourself, create an empty
+[`MatrixImplementationMap`][fatqat.implementation.MatrixImplementationMap]. The
+simulator uses a copy of the registrations made before it was created. Additions
+and removals you make later affect only the original map.
 
 ## Choose a rule
 
-
-[`MatrixImplementationMap.add`][fatqat.implementation.MatrixImplementationMap.add] accepts an operation
-or channel instance or class. Matrix operations accept these rule forms:
-
-**Matrix rule forms**
+Register a rule with
+[`MatrixImplementationMap.add()`][fatqat.implementation.MatrixImplementationMap.add].
+You can pass an operation or channel instance, or its class. For an operation
+implemented with a matrix, choose one of the following forms.
 
 | Form | Use it for | Value passed to `add` |
 | --- | --- | --- |
@@ -35,19 +34,17 @@ or channel instance or class. Matrix operations accept these rule forms:
 | Callable | A matrix that depends on operation parameters or target dimensions | `rule(op)` by default. If the callable accepts a `targets=` keyword or `**kwargs`, FATQAT calls `rule(op, targets=targets)`. |
 | [`MatrixImplementation`][fatqat.implementation.MatrixImplementation] | A configured or stateful rule object | Override `__call__(op, *, targets)`. |
 
-Channel rules are callables returning Kraus matrices; see
-[Custom noise implementations](noise/custom-implementations.md). For operations
-that update quantum and classical state together, the same map
-accepts `CustomOperationImplementation` objects. See
-[Custom operations](simulators/custom-operations.md).
+Use a callable that returns Kraus matrices for a [custom
+channel](noise/custom-implementations.md). To update the quantum and classical
+state together, register a `CustomOperationImplementation`. See [Custom
+operations](simulators/custom-operations.md) for that interface.
 
-`op` is the applied operation value, so it contains parameters such as a
-rotation angle. `targets` contains scalar program
-[`RegisterRef`][fatqat.RegisterRef] objects in operand order; a rule can inspect
-`target.register.dim` when its matrix depends on subsystem dimension.
+In a matrix rule, `op` is the operation instance, including any parameters such as
+a rotation angle. `targets` gives one [`RegisterRef`][fatqat.RegisterRef] per
+operand, in program order. Read `target.register.dim` if the matrix depends on a
+target's dimension.
 
 ## Local basis order
-
 
 Matrix factors follow the target tuple passed to
 [`add`][fatqat.Program.add]. The first target is the most-significant local
@@ -63,7 +60,6 @@ or differently ordered target tuple must be embedded before direct use with a
 full returned state; the simulator performs that embedding during execution.
 
 ## Target-specific rules
-
 
 Pass `device_operands=` to `add` to register a rule only for that exact
 ordered tuple of backend-defined physical labels. These labels are not program
@@ -81,19 +77,18 @@ Both modes accept `num_subsystems=None` and instance-dependent channel widths.
 Their device-specific tuples may have different lengths. A fixed integer
 `num_subsystems` requires that many labels.
 
-## Validation timing
+## Registration and run errors { #validation-timing }
 
+[`add()`][fatqat.implementation.MatrixImplementationMap.add] checks the
+registration when you add it. A rule that raises while the backend prepares an
+operation can produce
+[`MatrixImplementationError`][fatqat.errors.MatrixImplementationError]. A matrix
+with the wrong shape raises
+[`BackendValidationError`][fatqat.errors.BackendValidationError], and an
+unregistered operation raises
+[`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError].
 
-`add` rejects an invalid registration immediately with `TypeError` or
-`ValueError`. Matrix and channel rules run when a backend prepares a program. A matrix rule that
-raises produces [`MatrixImplementationError`][fatqat.errors.MatrixImplementationError], an array
-with the wrong target shape produces
-[`BackendValidationError`][fatqat.errors.BackendValidationError], and a missing rule produces
-[`UnsupportedOperationError`][fatqat.errors.UnsupportedOperationError]. These errors occur before
-`run` returns a [`Job`][fatqat.Job].
-
-## Reference
-
+## API reference { #reference }
 
 ### data `fatqat.implementation.DeviceOperands` { #fatqat.implementation.DeviceOperands }
 

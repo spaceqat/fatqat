@@ -463,7 +463,7 @@ def test_reordered_permutations_match_numpy_runtime(method, num_qubits):
     options = {
         "shots": 0,
         "result_config": {"counts": False, "final_state": True},
-        "simulation_config": {"kernel_parallelism": "serial"},
+        "execution_config": {"kernel_parallelism": "serial"},
     }
     results = [
         getattr(
@@ -504,7 +504,7 @@ def test_sweep_changing_gate_structure_matches_explicit_runs(permutation_first):
     noise.add(Depolarizing(p=0.05), operation=ops.H)
     backend = Simulator("SV", runtime="numba", implementation_map=impl_map, noise=noise)
     values = [0.0, 1.2, 0.0] if permutation_first else [1.2, 0.0, 0.7]
-    options = {"shots": 64, "simulation_config": {"seed": 3}}
+    options = {"shots": 64, "execution_config": {"seed": 3}}
 
     swept = backend.run_sweep(program, {tau: values}, **options).result()
 

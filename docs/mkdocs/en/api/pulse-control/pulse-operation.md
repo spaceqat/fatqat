@@ -10,14 +10,10 @@ title: "PulseOperation"
     supported behavior may change between releases. Pin an exact FatQat
     version when reproducibility matters.
 
-[`PulseOperation`][fatqat.operations.PulseOperation] adds an explicit pulse block to a program. Import
-it from `fatqat.operations`, normally as `ops.PulseOperation`.
-
-An ordinary gate is added by passing logical targets to `Program.add`.
-For a `PulseOperation`, do not pass targets: every
-[`PulseControl`][fatqat.emulator.PulseControl] already names the physical channel
-to drive. Add it with `program.add(operation)`. A
-[`ResourceLayout`][fatqat.ResourceLayout] does not remap its channels.
+Add a [`PulseOperation`][fatqat.operations.PulseOperation] with
+`program.add(operation)`. Its controls already specify the physical channels
+to drive. Put controls in the same block when they should share a time axis.
+Each control's `start_offset` is measured from the start of that block.
 
 ## Conditions and noise
 
@@ -31,21 +27,17 @@ Operation-scoped noise cannot be attached to a direct pulse block, so
 `noise.add(..., operation=ops.PulseOperation)` raises `ValueError`.
 Background noise selected by target or device label still applies.
 
-## Support
+## Drawing and export { #support }
 
 
-Direct `PulseOperation` blocks run on
-[`TransmonEmulator`][fatqat.emulator.TransmonEmulator] and
-[`Atom2LevelEmulator`][fatqat.emulator.Atom2LevelEmulator].
-[Pulse control](index.md) compares their channels and units. [Matrix simulators
-and their device profiles](../simulators/index.md) do not accept direct pulse
-blocks, and neither circuit drawing nor OpenQASM export can represent them.
+Use supported gate-level operations for circuit drawing and OpenQASM export.
 
-## Reference
+## API reference { #reference }
 
 
 ::: fatqat.operations.PulseOperation
     options:
+      heading_level: 3
       members: false
       inherited_members: false
       show_bases: true

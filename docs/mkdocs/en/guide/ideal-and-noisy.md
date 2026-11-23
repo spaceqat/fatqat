@@ -1,5 +1,12 @@
 # Compare the same Program ideally and noisily
 
+Real quantum devices are affected by their environment, imperfect controls,
+and measurement errors. These effects can change the state or the recorded
+outcomes. An ideal simulation helps you understand the intended computation;
+adding a noise model lets you study how selected imperfections affect it and
+bring the simulation closer to the conditions of an implementation. Which
+effects it captures depends on the model and parameters you choose.
+
 Attach a [`NoiseModel`][fatqat.NoiseModel] to a simulator to study how errors
 affect your results. The model specifies which errors occur and where they
 apply; you can run the same [`Program`][fatqat.Program] with or without it.
@@ -25,7 +32,7 @@ Prepare a Bell pair and measure both qubits:
 >>> ideal_counts = ideal_backend.run(
 ...     bell,
 ...     shots=4_000,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 >>> ideal_counts
 {'00': 2013, '11': 1987}
@@ -68,7 +75,7 @@ Pass the noise model to another simulator:
 >>> noisy_counts = noisy_backend.run(
 ...     bell,
 ...     shots=4_000,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 >>> noisy_counts
 {'00': 1853, '01': 201, '10': 204, '11': 1742}
@@ -113,7 +120,7 @@ shifting the balance between `00` and `11`.
         method="density_matrix", runtime="numpy", noise=noise
     )
     shots = 4_000
-    run_options = {"shots": shots, "simulation_config": {"seed": 7}}
+    run_options = {"shots": shots, "execution_config": {"seed": 7}}
     ideal = ideal_backend.run(bell, **run_options).result().get_counts()
     noisy = noisy_backend.run(bell, **run_options).result().get_counts()
 
@@ -173,9 +180,10 @@ noisy state or an expectation value without sampling noise trajectories.
 | Circuit simulator | finite probabilities and channels | at matched operation boundaries |
 | Physical emulator | rates and relaxation times | throughout elapsed Hamiltonian/Lindblad evolution |
 
-Circuit noise probabilities and continuous-time rates require different
-inputs; FatQat does not convert between them automatically. Move to
-[Hamiltonian-level emulation](hamiltonian-emulation.md) for pulse duration,
-idle evolution, leakage, or continuous-time noise. For supported combinations,
-selectors, and validation rules, see the [noise-backend-support](../api/noise/backend-support.md#noise-backend-support) table
-and [Noise model API](../api/noise/model.md).
+Use [Hamiltonian-level emulation](hamiltonian-emulation.md) to study how noise
+accumulates during pulses and idle periods. Start with the [pulse-emulator
+configuration example](../api/noise.md#during-pulse-evolution) for a rate-based
+model. The [backend support
+table](../api/noise/backend-support.md#noise-backend-support) lists available
+noise forms, and the [NoiseModel API](../api/noise/model.md) explains how to
+select operations and targets.

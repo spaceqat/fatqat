@@ -452,7 +452,7 @@ def _final_state(program, method, runtime, *, fused):
             program,
             shots=0,
             result_config=STATE_ONLY,
-            simulation_config={"fusion": fused},
+            execution_config={"fusion": fused},
         )
         .result()
     )
@@ -536,7 +536,7 @@ def test_process_shots_run_the_plan_fused_once_in_the_parent(monkeypatch, runtim
         config = {"seed": 7, "shot_parallelism": "processes", "fusion": fused}
         return (
             Simulator("SV", runtime=runtime)
-            .run(_mid_circuit_program(), shots=64, simulation_config=config)
+            .run(_mid_circuit_program(), shots=64, execution_config=config)
             .result()
             .get_counts()
         )
@@ -601,7 +601,7 @@ def test_sampled_expectation_tail_is_never_fused(monkeypatch):
         _brick(4, 2),
         fq.Observable([("ZZII", 1.0), ("XIII", 0.5)]),
         shots=64,
-        simulation_config=config,
+        execution_config=config,
     ).result()
 
     assert calls["body"] >= 1
@@ -620,7 +620,7 @@ def test_process_tail_is_not_fused_when_the_context_carries_limits(monkeypatch):
         _brick(4, 1, clbits=4),
         resource_layout=None,
         initial_state=None,
-        simulation_config=None,
+        execution_config=None,
     ).plan
     record = _record(monkeypatch, type(engine))
     dispatched = []
@@ -661,7 +661,7 @@ def test_engine_does_not_fuse_without_limits_in_the_context(monkeypatch):
         _brick(4, 2),
         resource_layout=None,
         initial_state=None,
-        simulation_config={"fusion": True},
+        execution_config={"fusion": True},
     )
     record = _record(monkeypatch, type(simulator._engine))
     context = _RunContext(
@@ -691,7 +691,7 @@ def test_exact_expectation_runs_the_gate_pass(monkeypatch):
         _brick(4, 2),
         fq.Observable([("ZZII", 1.0)]),
         shots=0,
-        simulation_config={"fusion": True},
+        execution_config={"fusion": True},
     ).result()
 
     assert record.calls >= 1
@@ -710,7 +710,7 @@ def test_sampled_expectation_without_base_state_runs_the_gate_pass(monkeypatch):
         program,
         fq.Observable([("ZZII", 1.0)]),
         shots=8,
-        simulation_config={"fusion": True, "shot_parallelism": "serial"},
+        execution_config={"fusion": True, "shot_parallelism": "serial"},
     ).result()
 
     assert record.calls >= 1
@@ -737,7 +737,7 @@ def test_fusion_is_rejected_when_the_run_tracks_occupancy(simulator_cls):
             _occupancy_program(),
             shots=4,
             initial_state=initial,
-            simulation_config={"fusion": True},
+            execution_config={"fusion": True},
         )
     unfused = simulator.run(_occupancy_program(), shots=4, initial_state=initial)
 
@@ -748,7 +748,7 @@ def test_atom_array_simulator_rejects_fusion_without_initial_occupancy():
     # The atom-array simulator tracks occupancy even when no site is filled.
     with pytest.raises(BackendValidationError, match="fusion=True.*occupancy"):
         AtomArraySimulator(runtime="numpy").run(
-            _occupancy_program(), shots=4, simulation_config={"fusion": True}
+            _occupancy_program(), shots=4, execution_config={"fusion": True}
         )
 
 
@@ -762,7 +762,7 @@ def test_operator_engines_keep_their_plan_with_fusion_enabled(monkeypatch, metho
         _brick(5, 3),
         shots=0,
         result_config=STATE_ONLY,
-        simulation_config={"fusion": True},
+        execution_config={"fusion": True},
     ).result()
 
     assert record.calls == 0
@@ -786,7 +786,7 @@ def test_sweep_fuses_every_bound_entry(monkeypatch):
                 {phi: np.array([0.1, 0.7, 2.0])},
                 shots=0,
                 result_config=STATE_ONLY,
-                simulation_config={"fusion": fused},
+                execution_config={"fusion": fused},
             )
             .result()
         )
@@ -849,12 +849,12 @@ def test_numpy_state_engines_accept_enabling_fusion(method):
             _brick(3, 1),
             shots=0,
             result_config=STATE_ONLY,
-            simulation_config={"fusion": True},
+            execution_config={"fusion": True},
         )
         .result()
     )
 
-    assert result.metadata["simulation_config"]["fusion"] is True
+    assert result.metadata["execution_config"]["fusion"] is True
 
 
 @pytest.mark.parametrize("method", ["unitary", "superop"])
@@ -863,7 +863,7 @@ def test_numpy_operator_engines_reject_enabling_fusion(method):
     # accepting the switch would promise a speedup that never happens.
     with pytest.raises(BackendValidationError, match="not supported.*matrix engine"):
         Simulator(method=method, runtime="numpy").run(
-            _brick(3, 1), simulation_config={"fusion": True}
+            _brick(3, 1), execution_config={"fusion": True}
         )
 
 

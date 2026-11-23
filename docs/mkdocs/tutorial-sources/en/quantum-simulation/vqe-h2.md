@@ -231,7 +231,7 @@ fig.tight_layout()
 The same energy, estimated the way hardware would deliver it: every
 expectation comes from 1024 measurement shots. `shots` is a per-run
 option, not an estimator property, so the same estimator serves exact
-and sampled evaluations. An explicit `simulation_config={"seed": ...}`
+and sampled evaluations. An explicit `execution_config={"seed": ...}`
 reuses the same randomness at every evaluation, keeping the optimizer's
 landscape deterministic. `sampled_std` propagates the per-observable
 standard errors (`get_standard_error()`) through the weights in quadrature —
@@ -244,7 +244,7 @@ def energy_sampled(theta):
     bound = template.assign_parameters({THETA: theta})
     expectations = (
         ESTIMATOR_SV.run(
-            bound, OBSERVABLES, shots=1024, simulation_config={"seed": 7}
+            bound, OBSERVABLES, shots=1024, execution_config={"seed": 7}
         )
         .result()
         .get_expectation()
@@ -257,7 +257,7 @@ def sampled_std(theta):
     bound = template.assign_parameters({THETA: theta})
     std = (
         ESTIMATOR_SV.run(
-            bound, OBSERVABLES, shots=1024, simulation_config={"seed": 7}
+            bound, OBSERVABLES, shots=1024, execution_config={"seed": 7}
         )
         .result()
         .get_standard_error()

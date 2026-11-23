@@ -180,7 +180,7 @@ def test_bridge_runs_bell_state_with_initial_atom_load():
             program,
             shots=1_000,
             resource_layout=layout,
-            simulation_config={"seed": 5, "shot_parallelism": "serial"},
+            execution_config={"seed": 5, "shot_parallelism": "serial"},
         )
         .result()
         .get_counts()

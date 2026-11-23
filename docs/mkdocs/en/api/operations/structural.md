@@ -1,62 +1,64 @@
 ---
-title: "Measurement and structural operations"
+title: "Measurement, reset, and barriers"
 ---
 
-# Measurement and structural operations
+# Measurement, reset, and barriers
 
+<a id="measurement-and-structural-operations"></a>
+<a id="measurement-and-reset"></a>
 
-## Measurement and reset
+## Measurement
 
-
-Measurement writes computational-basis outcomes to classical storage. Reset
-returns its targets to `|0>` without producing an output.
-
-Create measurements with [`fatqat.Program.measure`][fatqat.Program.measure] or
-[`fatqat.Program.measure_all`][fatqat.Program.measure_all]. A grouped measurement pairs quantum
-targets and classical outputs by tuple position, and each pair must have the
-same local dimension. Measurements are created through these methods, not
-[`add`][fatqat.Program.add], and cannot carry its `condition=` argument.
-
-Repeated targets and outputs are accepted, and pairs are processed in tuple
-order. Repeating a target reports its already-collapsed outcome, with reporting
-noise applied independently to each pair. Repeating a classical output means
-the last write wins. [`ReadoutConfusion`][fatqat.noise.ReadoutConfusion] changes only
-the reported digit, not the collapsed physical outcome.
+Use [`measure()`][fatqat.Program.measure] or
+[`measure_all()`][fatqat.Program.measure_all] to read computational-basis
+outcomes into classical registers. A grouped measurement pairs targets and
+outputs in the order supplied. If several results go to the same classical
+destination, the last write wins.
 
 ::: fatqat.operations.Measurement
     options:
+      heading_level: 3
       inherited_members: false
       show_bases: false
       merge_init_into_class: false
       filters:
         - "!^_"
 
-Add [`Reset`][fatqat.operations.Reset] with [`fatqat.Program.add`][fatqat.Program.add]. It accepts one or more
-distinct scalar targets and can carry a condition when the backend supports
-feedforward. It rejects an empty target tuple, duplicate targets, and
-[`RegisterView`](../registers.md#fatqat.RegisterView). Reset is non-unitary. For an entangled
-target, a statevector run samples one reset branch, while a density-matrix run
-represents the resulting mixture directly. It has no attached-noise
-realization, so using it as the `operation=` selector in
-[`fatqat.NoiseModel.add`][fatqat.NoiseModel.add] raises [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError).
+## Reset
+
+Add [`Reset`][fatqat.operations.Reset] with
+[`Program.add()`][fatqat.Program.add] to return targets to `|0>` without
+recording a measurement.
 
 ::: fatqat.operations.Reset
     options:
+      heading_level: 3
       show_attribute_values: false
+
+::: fatqat.operations.reset.ResetGate
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
+      members: false
+      inherited_members: false
+      show_bases: false
+      merge_init_into_class: false
 
 ## Compiler barrier
 
-
-[`Barrier`][fatqat.operations.Barrier] is a compiler and scheduling marker, not a state-changing
-operation or noise boundary. Add it with [`fatqat.Program.add`][fatqat.Program.add] and one
-or more distinct scalar targets. It rejects an empty target tuple, duplicate
-targets, and [`RegisterView`](../registers.md#fatqat.RegisterView).
-
-Built-in simulators ignore barriers, including any condition recorded by
-[`add`][fatqat.Program.add], so barriers do not change states or counts. A
-barrier cannot be bound to noise: using it as the `operation=` selector in
-[`fatqat.NoiseModel.add`][fatqat.NoiseModel.add] raises [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError).
+Use [`Barrier`][fatqat.operations.Barrier] to mark a compiler boundary
+without changing the simulated state.
 
 ::: fatqat.operations.Barrier
     options:
+      heading_level: 3
       show_attribute_values: false
+
+::: fatqat.operations.barrier.BarrierGate
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
+      members: false
+      inherited_members: false
+      show_bases: false
+      merge_init_into_class: false

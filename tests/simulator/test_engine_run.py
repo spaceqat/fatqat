@@ -133,7 +133,7 @@ def test_execution_survives_layout_changes(density_matrix):
 
 
 @pytest.mark.parametrize("with_loss", [False, True])
-def test_numba_trajectory_execution_handles_supported_and_fallback_plans(with_loss):
+def test_numba_trajectory_execution_handles_reset_and_loss_plans(with_loss):
     from fatqat.simulator._engine.engines.numba_engine import NumbaSVEngine
 
     plan = (ResetStep((0,)),)

@@ -4,11 +4,11 @@ Linear optics computes with photons travelling through optical modes, such as
 the two output ports of a beam splitter. It differs from qubit circuits in
 three ways:
 
-- **A mode holds any number of photons.** Its level `n` is a photon count, not
+- **A mode holds any number of photons.** Its level $n$ is a photon count, not
   one of two states.
-- **Photons are moved, never created.** Beam splitters and phase shifters
-  redistribute photons among modes; the total number that entered stays the
-  same.
+- **These operations conserve photon number.** A beam splitter mixes two modes. A
+  phase shifter changes a mode's phase and can affect the outcome when modes
+  interfere later.
 - **Photons are identical.** When two photons could have taken different paths
   to the same outcome, those paths interfere, and some outcomes disappear.
 
@@ -43,7 +43,7 @@ mode, and unnamed modes start empty. Send one photon into mode 0:
 >>> one_photon = BasisState({modes[0]: 1})
 >>> simulator.run(
 ...     splitter, shots=1000, initial_state=one_photon,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 {'01': 502, '10': 498}
 ```
@@ -62,7 +62,7 @@ both in mode 1, and half would put one in each mode, `"11"`:
 >>> two_photons = BasisState({modes[0]: 1, modes[1]: 1})
 >>> simulator.run(
 ...     splitter, shots=1000, initial_state=two_photons,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result().get_counts()
 {'02': 502, '20': 498}
 ```
@@ -80,10 +80,11 @@ particles.
 ## Change the reflectivity
 
 The cancellation is exact only for a balanced splitter. `BeamSplitter(theta)`
-reflects a photon with probability `R = sin(theta)**2`. The two histories that
-end in `"11"` have amplitudes `cos(theta)**2` and `-sin(theta)**2`, so the
-coincidence probability is `(1 - 2R)**2`. For distinguishable particles the
-probabilities would add instead, giving `(1 - R)**2 + R**2`.
+reflects a photon with probability $R = \sin^2\theta$. The two histories that
+end in `"11"` have amplitudes $\cos^2\theta$ and $-\sin^2\theta$. For identical
+photons, add the amplitudes and then square to get the coincidence probability
+$(1 - 2R)^2$. For distinguishable particles, add the probabilities of the two
+histories to get $(1 - R)^2 + R^2$.
 
 An [`Estimator`][fatqat.Estimator] computes the exact probability of `"11"` as
 the expectation value of [`Projector(1)`][fatqat.observable.Projector] on both
@@ -158,8 +159,8 @@ A finer sweep traces the full curves:
     plt.show()
     ```
 
-At `R = 0` and `R = 1` only one history is possible, so the two cases agree.
-In between, interference suppresses coincidences, and at `R = 0.5` it removes
+At $R = 0$ and $R = 1$ only one history is possible, so the two cases agree.
+In between, interference suppresses coincidences, and at $R = 0.5$ it removes
 them completely. In the laboratory, the Hong–Ou–Mandel dip is usually traced
 at a fixed 50:50 splitter by delaying one photon, which makes the photons
 partly distinguishable and brings the coincidences back.
@@ -167,7 +168,7 @@ partly distinguishable and brings the coincidences back.
 ## Simulate larger interferometers
 
 A statevector stores every combination of photon counts, from `0` to the
-cutoff in each mode. Twelve modes with four photons would need `5**12`, about
+cutoff in each mode. Twelve modes with four photons would need $5^{12}$, about
 244 million amplitudes or 3.9 GB, although almost all of them stay zero: beam
 splitters never change the total photon number.
 
@@ -203,7 +204,6 @@ probability that the photons leave in the four modes they entered is
 0.0056
 ```
 
-The method needs a `BasisState` start and modes only, and it rejects noise.
-For qubits alongside modes, dense initial states, or noise, choose
-`LOSimulator("statevector")` or `LOSimulator("density_matrix")`; see
-[`LOSimulator`][fatqat.simulator.LOSimulator] for the full rules.
+For help choosing a method or setting the photon cutoff for another program, see
+the [LOSimulator
+API](../api/simulators/linear-optics.md#choose-an-optical-simulation-method).

@@ -131,10 +131,13 @@ class QuantumRegister(Register):
 class ModeRegister(QuantumRegister):
     """Register of optical modes.
 
+    Call ``ModeRegister(size, name=None, metadata=...)``. Omit ``metadata``
+    to start with an empty dictionary. The constructor does not take ``dim``.
+
     Each slot is one mode, and its level is the number of photons in it. A
     mode can hold any number of photons, so ``dim`` is ``None``; the
     simulator limits it per run (`fatqat.simulator.LOSimulator` takes
-    ``simulation_config["cutoff"]``). Run mode Programs on
+    ``execution_config["cutoff"]``). Run mode Programs on
     `fatqat.simulator.LOSimulator`; the general
     `fatqat.simulator.Simulator` rejects them. Measure a mode into a
     `CountRegister`.
@@ -187,6 +190,9 @@ class ClassicalRegister(Register):
 class CountRegister(ClassicalRegister):
     """Register for photon counts.
 
+    Call ``CountRegister(size, name=None, metadata=...)``. Omit ``metadata``
+    to start with an empty dictionary. The constructor does not take ``dim``.
+
     Measuring a `ModeRegister` slot writes its photon count here, from ``0``
     up to the run's cutoff, so ``dim`` is ``None``. Modes measure only into
     a `CountRegister`, and a `CountRegister` records only mode measurements.
@@ -214,6 +220,10 @@ class RegisterRef:
     Obtain refs by indexing a register, which checks the index and rejects
     negative indexing. Direct construction is unsupported. Refs from different
     register objects remain distinct and can be used as dictionary keys.
+
+    Attributes:
+        register: The register that owns this member.
+        index: The member's zero-based index in that register.
     """
 
     register: Register

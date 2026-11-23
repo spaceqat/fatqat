@@ -72,7 +72,7 @@ def test_atom_3level_default_noisy_statevector_is_a_seeded_trajectory(
     program.add(ops.RX(np.pi), 0)
     kwargs = {
         "shots": 1,
-        "simulation_config": {"seed": 29},
+        "execution_config": {"seed": 29},
         "result_config": {"counts": False, "final_state": True},
     }
 

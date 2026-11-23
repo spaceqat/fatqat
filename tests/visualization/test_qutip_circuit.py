@@ -28,11 +28,15 @@ import fatqat.operations as ops
 from fatqat.emulator import ControlChannel, PulseControl, SampledWaveform
 from fatqat.errors import UnsupportedOperationError
 from fatqat.operations import PulseOperation
-from fatqat.visualization import to_qubit_circuit
+from fatqat.visualization import to_qutip_circuit
 
 
-def test_visualization_exports_to_qubit_circuit():
-    assert fq.visualization.to_qubit_circuit is to_qubit_circuit
+def test_to_qubit_circuit_warns_and_still_translates_the_program():
+    program = fq.Program(2)
+    program.add(ops.CX, (0, 1))
+    with pytest.warns(DeprecationWarning, match="deprecated.*use to_qutip_circuit"):
+        circuit = fq.visualization.to_qubit_circuit(program)
+    assert _elements(circuit) == _elements(to_qutip_circuit(program))
 
 
 def test_legacy_draw_module_is_removed():
@@ -115,7 +119,7 @@ def test_gates_translate_to_qutip_equivalents():
     program.add(ops.RZ(0.7), 1)
     program.add(ops.CX, (0, 1))
     program.add(ops.CCX, (0, 1, 2))
-    elements = _elements(to_qubit_circuit(program))
+    elements = _elements(to_qutip_circuit(program))
 
     assert len(elements) == 4
     assert elements[0][1] == [0]  # H on wire 0
@@ -130,7 +134,7 @@ def test_controlled_y_and_s_translate_with_control_first(gate):
     program = fq.Program(2)
     program.add(gate, (0, 1))
 
-    ((_, targets, controls, _),) = _elements(to_qubit_circuit(program))
+    ((_, targets, controls, _),) = _elements(to_qutip_circuit(program))
 
     assert controls == [0]
     assert targets == [1]
@@ -139,7 +143,7 @@ def test_controlled_y_and_s_translate_with_control_first(gate):
 def test_custom_gate_draws_as_a_box_with_its_name():
     program = fq.Program(1)
     program.add(_Custom(), 0)
-    ((name, targets, controls, _),) = _elements(to_qubit_circuit(program))
+    ((name, targets, controls, _),) = _elements(to_qutip_circuit(program))
 
     assert name == "MyG"  # the box carries the operation's own name
     assert targets == [0]
@@ -150,7 +154,7 @@ def test_custom_gate_name_collision_stays_a_plain_box():
     program = fq.Program(2)
     program.add(_CustomCY(), (0, 1))
 
-    ((name, targets, controls, _),) = _elements(to_qubit_circuit(program))
+    ((name, targets, controls, _),) = _elements(to_qutip_circuit(program))
 
     assert name == "CY"
     assert targets == [0, 1]
@@ -163,7 +167,7 @@ def test_measurement_reset_barrier_and_condition_translate():
     program.add(ops.X, 1, condition=(0, 1))
     program.add(ops.Reset, 0)
     program.add(ops.Barrier, (0, 1))
-    elements = _elements(to_qubit_circuit(program))
+    elements = _elements(to_qutip_circuit(program))
 
     assert [name for name, *_ in elements] == ["M", "X", "|0>", "barrier"]
     assert elements[1][3] == [0]  # feedforward draws a classical control wire
@@ -197,7 +201,7 @@ def test_qudit_program_draws_as_plain_wires():
     program = fq.Program([fq.QuantumRegister(2, dim=3)])
     program.add(ops.Fourier, 0)
     program.add(ops.Sum, (0, 1))
-    circuit = to_qubit_circuit(program)
+    circuit = to_qutip_circuit(program)
 
     # one wire per subsystem (``N`` was renamed ``num_qubits``)
     assert getattr(circuit, "num_qubits", None) or circuit.N == 2
@@ -380,7 +384,7 @@ def test_drawing_rejects_pulse_operations_before_qutip_translation():
     )
 
     with pytest.raises(UnsupportedOperationError, match="PulseOperation"):
-        to_qubit_circuit(program)
+        to_qutip_circuit(program)
 
 
 def test_public_circuit_translation_has_no_private_barrier_marker():
@@ -388,7 +392,7 @@ def test_public_circuit_translation_has_no_private_barrier_marker():
     program.add(ops.H, 0)
     program.add(ops.Barrier, (0, 1))
 
-    circuit = to_qubit_circuit(program)
+    circuit = to_qutip_circuit(program)
     labels = [
         (getattr(gate, "name", None), getattr(gate, "arg_label", None))
         for gate in circuit.gates

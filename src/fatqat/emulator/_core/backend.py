@@ -31,6 +31,7 @@ from ..._index_allocation import (
 from ..._backends.backend_utils import (
     _canonicalize_method,
     _normalize_config,
+    _resolve_execution_config,
     _resolve_result_flags,
     _validate_result_shots,
 )
@@ -112,7 +113,7 @@ class _PulseBackend(ABC):
     # Families may replace this with a dataclass derived from
     # ``_EmulatorConfig`` for family-specific per-run controls. The normalizer
     # derives accepted keys from the schema, so other families reject them.
-    _simulation_config_cls: type[_EmulatorConfig] = _EmulatorConfig
+    _execution_config_cls: type[_EmulatorConfig] = _EmulatorConfig
 
     def __init__(
         self,
@@ -157,7 +158,12 @@ class _PulseBackend(ABC):
     @property
     @final
     def method(self) -> str:
-        """Return the canonical mathematical representation for this emulator."""
+        """Return the canonical result representation for this emulator.
+
+        Method names are case-insensitive at construction. This property and
+        ``result.metadata["method"]`` use the full name, even when the method
+        was selected with ``"SV"`` or ``"DM"``.
+        """
 
         return self._method
 
@@ -292,13 +298,16 @@ class _PulseBackend(ABC):
         *,
         shots: int = 1024,
         resource_layout: ResourceLayout | None = None,
-        simulation_config: dict[str, Any] | None = None,
+        execution_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
+        simulation_config: dict[str, Any] | None = None,
     ) -> Job[Result]:
         """Run a program on this pulse emulator.
 
-        The emulator family fixes the initial product state; pulse backends do
-        not accept an ``initial_state`` argument.
+        State runs start in the emulator family's fixed product ground state.
+
+        The ``"unitary"`` method requires a program without measurement, reset,
+        classical conditions, or potentially active Lindblad noise.
 
         Args:
             program: Program to execute.
@@ -307,7 +316,7 @@ class _PulseBackend(ABC):
                 final state requires ``shots == 1``.
             resource_layout: Optional program-to-device mapping. The emulator
                 uses its default mapping when omitted.
-            simulation_config: Optional ``dict`` of pulse-execution settings.
+            execution_config: Optional ``dict`` of pulse-execution settings.
                 Every pulse emulator accepts:
 
                 - ``"seed"`` (``int | None``, default ``None``): Seed
@@ -318,20 +327,21 @@ class _PulseBackend(ABC):
                   or as late as possible while preserving dependencies and
                   physical-resource conflicts.
 
-                ``Atom2LevelEmulator`` additionally accepts
-                ``"interaction_cutoff"`` (finite nonnegative ``Real`` or
-                ``None``, default ``None``) to truncate that run's static
-                ``C6/R^6`` interaction Hamiltonian by pair distance.
+                ``Atom2LevelEmulator`` also accepts ``"interaction_cutoff"``
+                (finite nonnegative ``Real`` or ``None``, default ``None``).
+                It keeps interactions at or below that distance in
+                micrometres. ``None`` keeps all pairs and ``0.0`` disables pair
+                interactions. Booleans are rejected.
 
-                Other keys, including matrix-only execution settings, are
-                rejected.
+                Unknown keys are rejected.
             result_config: Optional ``dict`` of output requests. Accepted keys
                 are:
 
                 - ``"counts"`` (``bool | None``, default ``None``):
                   ``True`` requests classical counts, ``False`` suppresses
                   them, and ``None`` enables them when measurement exists.
-                  Counts require a positive integer ``shots`` value.
+                  Counts require a positive integer ``shots`` value and a
+                  state method.
                 - ``"final_state"`` (``bool | None``, default ``None``):
                   ``True`` requests the method-native ``statevector``,
                   ``density_matrix``, or ``unitary``; ``False`` suppresses it;
@@ -340,6 +350,8 @@ class _PulseBackend(ABC):
                   ``shots == 1``.
 
                 Other keys are rejected.
+            simulation_config: Deprecated alias for ``execution_config``,
+                to be removed before fatqat 0.1.0.
 
         Returns:
             A terminal ``Job``. Validation errors are raised by ``run()``.
@@ -350,17 +362,21 @@ class _PulseBackend(ABC):
             BackendValidationError: If the program, noise, or configuration
                 is unsupported, or if requested results are incompatible with
                 ``shots`` and measurement.
-            TypeError: If ``simulation_config`` or ``result_config`` is not a
-                ``dict`` or ``None``.
+            TypeError: If ``execution_config`` or ``result_config`` is not a
+                ``dict`` or ``None``, or if ``execution_config`` and its
+                deprecated alias are both supplied.
             UnsupportedOperationError: If no pulse implementation exists for
                 an operation family or its ordered device operands.
             PulseImplementationError: If a selected custom pulse rule fails
                 unexpectedly or returns the wrong value type.
         """
+        execution_config = _resolve_execution_config(
+            execution_config, simulation_config
+        )
         simulation = _normalize_config(
-            simulation_config,
-            self._simulation_config_cls,
-            "simulation_config",
+            execution_config,
+            self._execution_config_cls,
+            "execution_config",
             backend_name=self._backend_name(),
         )
         result = _normalize_config(
@@ -543,7 +559,7 @@ class _PulseBackend(ABC):
         observables: tuple[Observable, ...],
         *,
         shots: int,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
         initial_state: Any = None,
     ) -> Job[list[_ExpectationExecution]]:
@@ -564,7 +580,7 @@ class _PulseBackend(ABC):
                 program,
                 observables,
                 shots=shots,
-                simulation_config=simulation_config,
+                execution_config=execution_config,
                 operators=None,
             )
         # Observable operators by (terms, dims), built once and shared by every
@@ -577,7 +593,7 @@ class _PulseBackend(ABC):
                 program._assign_normalized_parameters(row),
                 observables,
                 shots=shots,
-                simulation_config=simulation_config,
+                execution_config=execution_config,
                 operators=operators,
             )
             if job.status != "DONE":
@@ -591,7 +607,7 @@ class _PulseBackend(ABC):
         observables: tuple[Observable, ...],
         *,
         shots: int,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
         operators: dict[Any, Any] | None,
     ) -> Job[list[_ExpectationExecution]]:
         """Execute one fully bound entry of an expectation request."""
@@ -599,7 +615,7 @@ class _PulseBackend(ABC):
             program,
             observables,
             shots=shots,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
         )
         try:
             runtime_details = None
@@ -641,14 +657,14 @@ class _PulseBackend(ABC):
         observables: tuple[Observable, ...],
         *,
         shots: int,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
     ) -> _PreparedPulseExpectation:
         """Validate, lower, and bind one pulse expectation request."""
         _validate_observable_targets(observables, program)
         simulation = _normalize_config(
-            simulation_config,
-            self._simulation_config_cls,
-            "simulation_config",
+            execution_config,
+            self._execution_config_cls,
+            "execution_config",
             backend_name=self._backend_name(),
         )
         prepared = self._prepare_program(program)
@@ -1092,6 +1108,8 @@ class _PulseBackend(ABC):
                 "solver_options": {},
             },
             "shots": shots,
+            "execution_config": asdict(simulation),
+            # Deprecated key; remove with the simulation_config keyword.
             "simulation_config": asdict(simulation),
             "result_config": {
                 "counts": request.counts,

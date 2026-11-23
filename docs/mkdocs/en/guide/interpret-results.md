@@ -1,7 +1,12 @@
 # Estimate observables
 
-Use [`Estimator`][fatqat.Estimator] to calculate expectation values, such as
-spin correlations or energies. Define the quantity with an
+Many quantum-physics problems ask about quantities such as energy or spin
+correlations, rather than every component of the quantum state. For these tasks,
+you often need only the expectation value of one observable or a group of
+observables, without requesting the full state as an output.
+
+Use [`Estimator`][fatqat.Estimator] to calculate these expectation values.
+Define each quantity with an
 [`Observable`][fatqat.Observable], then supply a Program and a
 [compatible simulator or emulator](../api/estimator.md#backend-support).
 You can calculate the expectation directly from the state or estimate it
@@ -88,7 +93,7 @@ True
 ...     bell,
 ...     zi,
 ...     shots=400,
-...     simulation_config={"seed": 7},
+...     execution_config={"seed": 7},
 ... ).result()
 >>> round(float(sampled.get_expectation()), 4)
 -0.045
@@ -128,7 +133,7 @@ below each estimate:
     standard_errors = []
     for index, shots in enumerate(shot_counts):
         result = estimator.run(
-            bell, zi, shots=shots, simulation_config={"seed": 7 + index}
+            bell, zi, shots=shots, execution_config={"seed": 7 + index}
         ).result()
         estimates.append(result.get_expectation())
         standard_errors.append(result.get_standard_error())
@@ -157,5 +162,6 @@ A density-matrix backend can calculate the expectation with noise channels
 directly; increasing the shot count improves the precision of a sampled
 estimate of that noisy expectation.
 
-See the [Estimator API](../api/estimator.md) for supported backends, observable
-construction, and run options.
+To compare expectation values at different parameter settings, pass the
+parameterized program and its binding values to
+[`Estimator.run_sweep()`][fatqat.Estimator.run_sweep].

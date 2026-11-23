@@ -1,4 +1,11 @@
-# Choose how much physics to model
+# Choose a simulation or emulation approach
+
+A quantum computation can be described at different levels of physical detail.
+When exploring an algorithm, it may be enough to describe how gates change the
+quantum state. To understand how that computation would run on a device, you
+may also need to account for its supported operations and connections, or for
+the pulses that drive its physical evolution. The useful level of detail
+depends on what you want to learn.
 
 Choose a backend according to the question you want to answer. A circuit
 simulation can test an algorithm, a hardware profile can check device rules,
@@ -180,7 +187,7 @@ You can reuse a Program when the destination backend supports its operations
 and resources. Otherwise, express the computation using operations it accepts,
 as `SX` does for the superconducting profile above. When program resources
 need specific device locations, a [`ResourceLayout`][fatqat.ResourceLayout]
-binds them to device labels. [Hardware-profile simulation](hardware-profile-simulation.md)
+binds them to device labels. [Hardware-profile simulation](superconducting-simulation.md)
 walks through a placement error and its correction.
 
 For circuit evolution and noise channels, see [Simulation](simulation.md) and

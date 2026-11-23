@@ -86,9 +86,10 @@ class NumberOperator(_Factor):
 class Projector(_Factor):
     """Projector ``|level><level|`` onto one computational-basis level.
 
-    ``Projector(0)`` and ``Projector(1)`` are the ``ZERO`` and ``ONE``
-    projectors. A backend rejects a level that its target's dimension cannot
-    hold.
+    Its expectation is the probability of finding the subsystem in that
+    basis level. ``ZERO`` and ``ONE`` stand for ``Projector(0)`` and
+    ``Projector(1)`` in a sparse observable. The level must be below the target
+    subsystem's dimension.
 
     Args:
         level: Non-negative level. Python and NumPy integers are accepted;
@@ -231,8 +232,8 @@ class Observable:
     ) -> "Observable":
         """Build an observable by naming only the non-identity local operators.
 
-        Use this form for wide observables, for projectors, and for the number
-        operator, none of which fit a dense single-character label.
+        Use this form to select subsystem indices directly and to include
+        projectors or number operators alongside Pauli operators.
 
         Args:
             data: Iterable of ``(operators, indices, coefficient)`` terms.

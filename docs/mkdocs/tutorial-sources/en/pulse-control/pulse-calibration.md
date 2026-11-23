@@ -395,7 +395,7 @@ counts = (
     backend.run(
         measured_program,
         shots=shots,
-        simulation_config={"seed": 7},
+        execution_config={"seed": 7},
         result_config={"counts": True, "final_state": False},
     )
     .result()

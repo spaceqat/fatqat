@@ -87,7 +87,7 @@ def test_matrix_execution_knobs_are_rejected_rather_than_silently_ignored(
     program = fq.Program(1)
     program.add(ops.RZ(0.2), 0)
     with pytest.raises(BackendValidationError, match=knob):
-        backend.run(program, simulation_config={knob: value})
+        backend.run(program, execution_config={knob: value})
 
 
 def test_run_directly_validates_config_and_executes_ideal_program(backend):
@@ -97,13 +97,13 @@ def test_run_directly_validates_config_and_executes_ideal_program(backend):
         backend.run(program, result_config={"density_matrix": True})
 
     with pytest.raises(BackendValidationError, match="schedule_mode"):
-        backend.run(program, simulation_config={"schedule_mode": "SIDEWAYS"})
+        backend.run(program, execution_config={"schedule_mode": "SIDEWAYS"})
 
     result = backend.run(
         program, result_config={"counts": False, "final_state": True}
     ).result()
     assert result.get_density_matrix().full().shape == (9, 9)
-    assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
+    assert result.metadata["execution_config"]["schedule_mode"] == "ASAP"
 
 
 def test_result_metadata_keeps_common_runtime_facts(backend):
@@ -120,7 +120,7 @@ def test_result_metadata_keeps_common_runtime_facts(backend):
             "max_step": 0.078125,
         },
     }
-    assert result.metadata["simulation_config"]["schedule_mode"] == "ASAP"
+    assert result.metadata["execution_config"]["schedule_mode"] == "ASAP"
     assert result.metadata["result_config"] == {
         "counts": False,
         "final_state": True,
@@ -143,7 +143,7 @@ def test_runtime_details_report_every_solver_used_across_dynamic_regions(
     result = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 1},
+        execution_config={"seed": 1},
         result_config={"counts": True, "final_state": True},
     ).result()
 
@@ -348,7 +348,7 @@ def test_sparse_layout_keeps_unaddressed_transmon_in_full_engine_model(
         program,
         resource_layout=layout,
         shots=1,
-        simulation_config={"seed": 17},
+        execution_config={"seed": 17},
         result_config={"counts": True, "final_state": True},
     ).result()
 

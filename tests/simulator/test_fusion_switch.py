@@ -26,16 +26,16 @@ def test_fusion_is_off_by_default():
     result = Simulator(method="DM", runtime="numba").run(
         _noisy_program(), shots=0, result_config=_STATE_ONLY
     )
-    assert result.result().metadata["simulation_config"]["fusion"] is False
+    assert result.result().metadata["execution_config"]["fusion"] is False
 
 
 def test_numpy_runtime_accepts_fusion_off():
     result = (
         Simulator(method="DM", runtime="numpy")
-        .run(_noisy_program(), simulation_config={"fusion": False})
+        .run(_noisy_program(), execution_config={"fusion": False})
         .result()
     )
-    assert result.metadata["simulation_config"]["fusion"] is False
+    assert result.metadata["execution_config"]["fusion"] is False
 
 
 @pytest.mark.parametrize("method", ["SV", "DM"])
@@ -46,11 +46,11 @@ def test_numba_state_evolution_accepts_enabling_fusion(method):
             _noisy_program(),
             shots=0,
             result_config=_STATE_ONLY,
-            simulation_config={"fusion": True},
+            execution_config={"fusion": True},
         )
         .result()
     )
-    assert result.metadata["simulation_config"]["fusion"] is True
+    assert result.metadata["execution_config"]["fusion"] is True
 
 
 def test_numba_fixed_photon_engine_declares_no_fusion():
@@ -66,5 +66,5 @@ def test_numba_fixed_photon_engine_declares_no_fusion():
 def test_a_non_boolean_is_rejected(bad):
     with pytest.raises(BackendValidationError, match="fusion must be a bool"):
         Simulator(method="DM", runtime="numba").run(
-            _noisy_program(), simulation_config={"fusion": bad}
+            _noisy_program(), execution_config={"fusion": bad}
         )

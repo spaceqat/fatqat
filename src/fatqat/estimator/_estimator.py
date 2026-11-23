@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+from .._backends.backend_utils import _resolve_execution_config
 from .._parameter_binding import (
     _normalize_parameter_batch,
     _raise_for_unbound_parameters,
@@ -26,17 +27,21 @@ from ..result import Result
 
 
 class Estimator:
-    """Evaluate observables with backend-owned expectation execution.
+    """Calculate expectation values after running a program.
 
-    Configure the method, runtime, noise model, and physical model on the
-    backend before constructing the estimator. Built-in matrix simulators and
-    pulse emulators implement the private execution seam used here.
+    Choose the method, runtime, and noise on the backend. Supported choices
+    include gate-level simulators with a state method, ``LOSimulator`` with a
+    state method or ``"fixed_photon_state"``, and ``Atom2LevelEmulator`` with
+    a state method. The chosen backend and method determine which observable
+    operators and noise models can be used. A backend that implements only
+    the ``Backend.run()`` protocol does not necessarily support estimation.
 
     Args:
-        backend: Constructed backend with a callable expectation hook.
+        backend: Configured backend that supports expectation evaluation.
 
     Raises:
-        BackendValidationError: If the backend lacks the required hook.
+        BackendValidationError: If the backend does not implement expectation
+            evaluation.
 
     Examples:
         >>> import fatqat as fq
@@ -61,6 +66,7 @@ class Estimator:
         *,
         shots: int = 0,
         initial_state: Any = None,
+        execution_config: dict[str, Any] | None = None,
         simulation_config: dict[str, Any] | None = None,
     ) -> Job[Result]:
         """Evaluate one or more observables on a program.
@@ -76,25 +82,35 @@ class Estimator:
                 operators need a qubit, and a projector level must be below its
                 subsystem's dimension. Unnamed subsystems carry the identity.
                 A list or tuple preserves its order in the returned arrays.
-            shots: Non-negative integer. ``0`` computes exact values. A
-                positive value draws this many independent samples for each
-                term and reports the resulting statistical standard error.
+            shots: Nonnegative Python ``int`` other than ``bool``.
+                ``0`` computes exact values. A positive value draws this many
+                independent samples for each nonconstant term. One sample
+                makes that term's standard error undefined (``nan``).
+                Constant terms contribute zero standard error.
             initial_state: Starting state for every shot, or ``None`` for the
                 ground state. Available only for simulators; see
                 :meth:`fatqat.simulator.Simulator.run` for the accepted forms.
-            simulation_config: Backend options for this execution, or
-                ``None``, forwarded unchanged; see the backend's ``run`` method
-                for the accepted keys.
+            execution_config: Options accepted by the backend's ``run()``
+                method, or ``None`` for defaults. In particular, set ``"seed"``
+                to reproduce sampled results.
+            simulation_config: Deprecated alias for ``execution_config``,
+                to be removed before fatqat 0.1.0.
 
         Returns:
             A completed ``Job``. A successful job contains a ``Result``; a
-            single observable produces scalar expectation and standard-error
-            values, while a list or tuple produces one-dimensional arrays.
-            Exact runs report zero standard error.
+            single observable produces scalar values, while a list or tuple
+            produces one-dimensional NumPy arrays in input order. Read them
+            with ``get_expectation()`` and ``get_standard_error()``. Exact runs
+            report zero standard error. The result contains no final state.
+            Result metadata includes ``backend_name``, ``method``,
+            ``runtime``, and ``shots``. Pulse results also include
+            ``runtime_details["solver"]`` when a solver was used.
 
         Raises:
             TypeError: If ``observables`` is not an ``Observable`` or a
-                supported collection containing only ``Observable`` values.
+                supported collection containing only ``Observable`` values,
+                if ``execution_config`` is neither a dictionary nor ``None``,
+                or if it and its deprecated alias are both supplied.
             BackendValidationError: If no observables are supplied; ``shots``
                 is not a non-negative integer; the program is measured or
                 unbound; an operator names a subsystem the program lacks, a Pauli
@@ -102,9 +118,12 @@ class Estimator:
                 its subsystem's dimension; or the backend raises this error
                 while preparing its native expectation execution.
         """
+        execution_config = _resolve_execution_config(
+            execution_config, simulation_config
+        )
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
-        _validate_simulation_config(simulation_config)
+        _validate_execution_config(execution_config)
         _validate_program(program)
         _raise_for_unbound_parameters(program._instructions)
         job = self._evaluate(
@@ -113,7 +132,7 @@ class Estimator:
             is_sequence,
             shots=shots,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
         )
         if job.status != "DONE":
             return job
@@ -128,6 +147,7 @@ class Estimator:
         *,
         shots: int = 0,
         initial_state: Any = None,
+        execution_config: dict[str, Any] | None = None,
         simulation_config: dict[str, Any] | None = None,
     ) -> Job[list[Result]]:
         """Evaluate a complete parameter batch in input order.
@@ -137,7 +157,8 @@ class Estimator:
         row never exposes a partial result list.
 
         Args:
-            program: Parameterized template program.
+            program: Parameterized program without measurement operations.
+                Supply its free parameters through ``bindings``.
             observables: One observable or a sequence evaluated for every row.
             bindings: Complete object-keyed batch. A ``Parameter`` maps to a
                 rank-1 batch. A length-M ``ParameterVector`` maps to a rank-2
@@ -147,8 +168,10 @@ class Estimator:
                 positive value draws this many samples per observable term.
             initial_state: Starting state for every shot in every row, as in
                 :meth:`run`. Available only for simulators.
-            simulation_config: Backend options reused for every row, as in
+            execution_config: Backend options reused for every row, as in
                 :meth:`run`. Reusing a seed can correlate sampled row errors.
+            simulation_config: Deprecated alias for ``execution_config``,
+                to be removed before fatqat 0.1.0.
 
         Returns:
             A completed ``Job`` containing one ``Result`` per row, in batch
@@ -157,7 +180,9 @@ class Estimator:
 
         Raises:
             TypeError: If a mapping key, batch container, scalar value, or
-                observable has an unsupported type.
+                observable has an unsupported type, or if
+                ``execution_config`` and its deprecated alias are both
+                supplied.
             ValueError: If the program is not parameterized; assignments are
                 missing, foreign, or duplicated; or batch ranks, widths, or
                 lengths disagree.
@@ -182,10 +207,13 @@ class Estimator:
             >>> [round(result.get_expectation(), 6) for result in results]
             [1.0, 0.540302]
         """
+        execution_config = _resolve_execution_config(
+            execution_config, simulation_config
+        )
         columns = _normalize_parameter_batch(program._instructions, bindings)
         observable_list, is_sequence = _normalize_observables(observables)
         _validate_shots(shots)
-        _validate_simulation_config(simulation_config)
+        _validate_execution_config(execution_config)
         _validate_program(program)
         return self._evaluate(
             program,
@@ -193,7 +221,7 @@ class Estimator:
             is_sequence,
             shots=shots,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             parameter_values=columns,
         )
 
@@ -205,7 +233,7 @@ class Estimator:
         *,
         shots: int,
         initial_state: Any,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
     ) -> Job[list[Result]]:
         """Run the backend's expectation hook once and shape each entry's result.
@@ -218,7 +246,7 @@ class Estimator:
             tuple(observable_list),
             shots=shots,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             parameter_values=parameter_values,
         )
         try:
@@ -285,13 +313,13 @@ def _validate_shots(shots: int) -> None:
         raise BackendValidationError(f"shots must be >= 0, got {shots}")
 
 
-def _validate_simulation_config(
-    simulation_config: dict[str, Any] | None,
+def _validate_execution_config(
+    execution_config: dict[str, Any] | None,
 ) -> None:
-    if simulation_config is not None and not isinstance(simulation_config, dict):
+    if execution_config is not None and not isinstance(execution_config, dict):
         raise TypeError(
-            "simulation_config must be a dict or None, got "
-            f"{type(simulation_config)!r}"
+            "execution_config must be a dict or None, got "
+            f"{type(execution_config)!r}"
         )
 
 

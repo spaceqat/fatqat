@@ -56,7 +56,8 @@ class NoiseModel:
     accumulate. Different noise types combine, while overlapping rules of the
     same concrete type are rejected. `TransitionRelaxation` is the one
     exception because separate declarations represent separate finite channel
-    applications or Lindblad jump operators.
+    applications or Lindblad jump operators. A built-in backend copies the
+    registrations at construction.
 
     Operation matching uses the exact concrete class. Parameters on an
     operation instance do not narrow the match, and a base class does not
@@ -185,6 +186,9 @@ class NoiseModel:
             matches is a no-op.
 
             Rules of the same type may use disjoint targets or positions.
+            Background and operation rules are separate scopes. Matching
+            channels on a simulator are applied in registration order. Matching
+            Lindblad operators act together on an emulator during the pulse.
             Universal and targeted readout rules cannot coexist, and at most
             one confusion matrix may apply to a measured operand.
 

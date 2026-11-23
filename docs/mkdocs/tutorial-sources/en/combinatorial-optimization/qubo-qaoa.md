@@ -499,7 +499,7 @@ SHOTS = 4000
 measured = simulator.run(
     qaoa_program(betas, gammas, measure=True),
     shots=SHOTS,
-    simulation_config={"seed": 11},
+    execution_config={"seed": 11},
 ).result()
 counts = measured.get_counts()
 

@@ -63,7 +63,8 @@ Add new guide and API pages to `nav` in the repository-root `mkdocs.yml`.
 Tutorial pages are discovered automatically and do not need navigation entries.
 
 Follow the writing and public-API standards in
-[`CONTRIBUTING.md`](../../CONTRIBUTING.md#writing-style-and-api-documentation).
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md#writing-style-and-api-documentation)
+and [Writing documentation](en/development/writing-documentation.md).
 Prefer native Material components such as grids, cards, figures, disclosures,
 and content tabs when they make substantive content easier to navigate.
 

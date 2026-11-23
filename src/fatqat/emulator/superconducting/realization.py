@@ -167,10 +167,14 @@ def _drag_definition(operation: Operation, context: _DragContext) -> PulseDefini
     # DRAG is derived in Hamiltonian-coefficient units; expose full Omega only
     # after its nonlinear corrections and frame rotation are complete.
     envelope *= 2.0
+    # The exp(+i*phase) envelope ramp equals driving in a frame rotated by
+    # exp(+i*phase*n), so the lab-frame state carries an extra
+    # exp(+i*phase[-1]*n). Since PhaseShift(+angle) applies exp(+i*angle*n)
+    # (the RZ(+angle) convention), undoing it takes the negative angle.
     return PulseDefinition(
         context.duration,
         (PulseControl(context.drive, SampledWaveform(tlist, envelope)),),
-        (PhaseShift(context.frame, float(phase[-1])),),
+        (PhaseShift(context.frame, -float(phase[-1])),),
     )
 
 
@@ -265,9 +269,11 @@ def default_transmon_gate_implementation_map(
 ) -> PulseImplementationMap:
     """Build the standard transmon gate-to-pulse map.
 
-    The returned rules use the model's channels, frames, subsystem parameters,
-    and coupling graph together with the supplied calibration. Rebuild the map
-    after changing values that should alter those pulse recipes.
+    The returned rules use the model's channels and frames together with
+    the supplied calibration. You can reuse the map with a model that has
+    the same subsystem labels, anharmonicities, and coupling edges. To
+    change a CZ recipe, including which transmon it detunes, create a new map
+    with the updated calibration.
 
     Args:
         model: Model whose physical resources and parameters the rules use.

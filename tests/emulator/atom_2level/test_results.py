@@ -146,11 +146,9 @@ def test_terminal_many_shot_counts_are_seeded_and_counts_only_retains_no_arrays(
 
     monkeypatch.setattr(PulseEngine, "run", record)
     program = _pulse_program(measured=True)
-    first = backend.run(
-        program, shots=40, simulation_config={"seed": 20260807}
-    ).result()
+    first = backend.run(program, shots=40, execution_config={"seed": 20260807}).result()
     second = backend.run(
-        program, shots=40, simulation_config={"seed": 20260807}
+        program, shots=40, execution_config={"seed": 20260807}
     ).result()
 
     assert first.get_counts() == second.get_counts()
@@ -164,7 +162,7 @@ def test_one_shot_requested_posterior_is_an_independent_collapsed_ket(backend):
     result = backend.run(
         _pulse_program(measured=True),
         shots=1,
-        simulation_config={"seed": 11},
+        execution_config={"seed": 11},
         result_config={"counts": True, "final_state": True},
     ).result()
     state = result.get_statevector().full().ravel()
@@ -190,12 +188,12 @@ def test_terminal_density_matrix_measurement_samples_and_collapses():
     sampled = backend.run(
         program,
         shots=30,
-        simulation_config={"seed": 20260830},
+        execution_config={"seed": 20260830},
     ).result()
     posterior = backend.run(
         program,
         shots=1,
-        simulation_config={"seed": 11},
+        execution_config={"seed": 11},
         result_config={"counts": True, "final_state": True},
     ).result()
 
@@ -227,7 +225,7 @@ def test_estimator_exact_x_and_sampled_diagonal_projector_execution():
         program,
         diagonal,
         shots=1_000,
-        simulation_config={"seed": 19},
+        execution_config={"seed": 19},
     ).result()
 
     assert exact_x.get_expectation() == pytest.approx(1.0, abs=1e-5)

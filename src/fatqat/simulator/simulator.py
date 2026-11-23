@@ -60,6 +60,7 @@ from .._backends.backend_utils import (
     _LoweringContext,
     _canonicalize_method,
     _normalize_config,
+    _resolve_execution_config,
     _resolve_result_flags,
     _validate_result_shots,
 )
@@ -156,8 +157,9 @@ class Simulator:
     ``rho.reshape(-1, order="F")``.
 
     The generic simulator accepts qubits, qudits, and mixed local dimensions.
-    Hardware-profile subclasses narrow the native gate set and resource layout
-    while preserving the same run and result contract.
+    Its default layout assigns integer labels starting at 0 in register
+    declaration order. Array basis indices use subsystem 0 as the most
+    significant factor.
 
     A backend may be reused for sequential runs. Use a separate instance for
     each concurrent caller.
@@ -184,7 +186,7 @@ class Simulator:
     # Subclasses may replace this with a dataclass derived from
     # ``_SimulationConfig`` for hardware-specific simulator controls. The
     # base backend consumes the inherited matrix-execution fields.
-    _simulation_config_cls: type[_SimulationConfig] = _SimulationConfig
+    _execution_config_cls: type[_SimulationConfig] = _SimulationConfig
 
     # Whether this backend implements the per-shot atom-occupancy lifecycle
     # Loss needs (loading, per-shot loss, refill). False on the generic
@@ -211,7 +213,8 @@ class Simulator:
                 ``"superop"``. Names are case-insensitive; ``"SV"`` and
                 ``"DM"`` are accepted aliases.
             runtime: ``"numpy"`` or ``"numba"``, ``None`` (default) uses
-                the current simulator default.
+                the current simulator default, initially ``"numba"``. Runtime
+                names are case-insensitive.
             implementation_map: Matrix, channel, and custom-operation implementations.
                 ``None`` uses ``default_matrix_implementation_map()``.
             noise: Noise model applied to every run. ``None`` means ideal
@@ -471,12 +474,13 @@ class Simulator:
         shots: int = 1024,
         resource_layout: ResourceLayout | None = None,
         initial_state: Any = None,
-        simulation_config: dict[str, Any] | None = None,
+        execution_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
+        simulation_config: dict[str, Any] | None = None,
     ) -> Job[Result]:
         """Validate and execute one program.
 
-        The returned job is eager and already terminal. Program and option
+        Execution finishes before the job is returned. Program and option
         validation errors raise directly. Execution errors follow the
         ``error_handling`` option described below.
 
@@ -485,7 +489,8 @@ class Simulator:
                 carries its required resource layout.
             shots: Circuit repetitions. Counts require a positive integer. An
                 explicitly requested stochastic final state requires exactly
-                one shot; deterministic state-only runs ignore this value.
+                one shot. Deterministic state-only and operator runs ignore
+                this value.
             resource_layout: Assignment from every program quantum reference
                 to a device label. It must be complete, one-to-one, and
                 compatible with the backend. The documented backend default
@@ -500,26 +505,29 @@ class Simulator:
                 physical validity. A ``BasisState`` names one level per
                 subsystem instead, and density-matrix execution starts from its
                 pure state. Operator methods reject an initial state.
-            simulation_config: Optional per-run execution controls. String
+            execution_config: Optional per-run execution controls. String
                 choices are case-sensitive. Accepted keys are:
 
                 - ``"seed"`` (``int | None``, default ``None``): Use a
                   non-negative sampling seed. Booleans are rejected; ``None``
                   uses fresh entropy. A negative value is rejected during
                   execution and follows ``error_handling``. A
-                  fixed seed reproduces counts only for the same method,
-                  runtime, shot count, parallelism settings, and result
-                  requests.
+                  fixed seed reproduces samples with the same program,
+                  settings, FatQat version, and execution environment.
                 - ``"shot_parallelism"`` (``str``, default ``"auto"``): How
                   independent shots run: ``"auto"``, ``"serial"``,
                   ``"threads"``, or ``"processes"``. Explicit parallel modes
-                  require an eligible counts-only run with at least two shots
-                  and workers. Threads require a compatible Numba statevector
-                  run.
+                  require independently evolved shots and counts-only output,
+                  with at least two shots and workers. For example, applying
+                  a gate to a qubit after measuring it requires per-shot
+                  evolution. Sampling only terminal measurements from one
+                  evolution is ineligible. Threads require a compatible
+                  Numba statevector run.
                 - ``"kernel_parallelism"`` (``str``, default ``"auto"``):
                   Numerical work within one shot: ``"auto"``, ``"serial"``,
-                  or ``"threads"``. Threads require Numba and cannot be
-                  requested with parallel shots.
+                  or ``"threads"``. Threads require a compatible Numba
+                  engine and cannot be requested together with explicit shot
+                  parallelism.
                 - ``"max_workers"`` (``int | None``, default ``None``):
                   Positive concurrency limit. ``None`` uses the runtime
                   limit; ``1`` conflicts with an explicit parallel request.
@@ -558,10 +566,12 @@ class Simulator:
                   deterministic. A requested stochastic state requires
                   ``shots == 1``.
                 - ``"final_classical_state"`` (``bool``, default ``False``):
-                  Whether to return one shot's final ``ClassicalState``
-                  (register digits and site occupancy). It is stochastic under
-                  the same conditions as the final state and then requires
-                  ``shots == 1``. Operator methods reject it.
+                  Whether to return one shot's final ``ClassicalState``,
+                  including the classical register digits. As with the final
+                  quantum state, a stochastic result requires ``shots == 1``.
+                  Operator methods reject it.
+            simulation_config: Deprecated alias for ``execution_config``,
+                to be removed before fatqat 0.1.0.
 
         Returns:
             A completed ``Job`` whose result is a ``Result``.
@@ -572,14 +582,19 @@ class Simulator:
             MatrixImplementationError: If a matrix rule cannot build the
                 selected operation for its target dimensions.
             TypeError: If ``program`` is not a ``Program`` or
-                ``ExecutableProgram``, or if ``simulation_config`` or
-                ``result_config`` is not a dictionary or ``None``.
+                ``ExecutableProgram``, if ``execution_config`` or
+                ``result_config`` is not a dictionary or ``None``, or if
+                ``execution_config`` and its deprecated alias are both
+                supplied.
             UnsupportedOperationError: If the program contains an operation
                 without a backend implementation, or one whose target key is
                 illegal for this backend.
             ValueError: If ``resource_layout`` is supplied for an executable
                 compiler result that already carries one.
         """
+        execution_config = _resolve_execution_config(
+            execution_config, simulation_config
+        )
         if isinstance(program, ExecutableProgram):
             if resource_layout is not None:
                 raise ValueError(
@@ -595,7 +610,7 @@ class Simulator:
             program,
             resource_layout=resource_layout,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
         )
         config, context = self._prepare_run(
             execution, shots=shots, result_config=result_config
@@ -614,8 +629,9 @@ class Simulator:
         shots: int = 1024,
         resource_layout: ResourceLayout | None = None,
         initial_state: Any = None,
-        simulation_config: dict[str, Any] | None = None,
+        execution_config: dict[str, Any] | None = None,
         result_config: dict[str, Any] | None = None,
+        simulation_config: dict[str, Any] | None = None,
     ) -> Job[list[Result]]:
         """Bind and run every row of a complete parameter batch.
 
@@ -640,44 +656,17 @@ class Simulator:
             initial_state: Quantum array, ``BasisState``, or ``EvolutionState``
                 used to initialize every shot in every row, following the same
                 rules as ``run()``.
-            simulation_config: Controls reused for every row. Accepted keys:
-
-                - ``"seed"`` (``int | None``, default ``None``): Use a
-                  non-negative sampling seed; booleans are rejected. ``None``
-                  uses fresh entropy for each row. A negative value fails
-                  during execution and follows ``error_handling``.
-                - ``"shot_parallelism"`` (``str``, default ``"auto"``):
-                  ``"auto"``, ``"serial"``, ``"threads"``, or
-                  ``"processes"``. Explicit parallel modes require an
-                  eligible counts-only run with at least two shots and
-                  workers. Threads require a compatible Numba statevector run.
-                - ``"kernel_parallelism"`` (``str``, default ``"auto"``):
-                  ``"auto"``, ``"serial"``, or ``"threads"``. Threads
-                  require Numba and cannot be requested with parallel shots.
-                - ``"max_workers"`` (``int | None``, default ``None``):
-                  Positive concurrency limit. ``None`` uses the runtime
-                  limit; ``1`` conflicts with an explicit parallel request.
-                - ``"error_handling"``: Same values, default, and behavior as
-                  ``run()``.
-                - ``"fusion"``: Same values, default, and behavior as
-                  ``run()``.
-
-                Unknown or incompatible entries are rejected.
-            result_config: Output requests reused for every row. Accepted keys:
-
-                - ``"counts"`` (``bool | None``, default ``None``): Histogram
-                  of the final classical register. ``None`` enables it when
-                  the program measures; counts require an integer
-                  ``shots > 0``.
-                - ``"final_state"`` (``bool | None``, default ``None``):
-                  Method-native state or map. ``None`` enables it when the
-                  result is deterministic; a requested stochastic state
-                  requires ``shots == 1``.
-                - ``"final_classical_state"`` (``bool``, default ``False``):
-                  Each row's final ``ClassicalState``, with the same rules as
-                  ``run()``.
-
-                ``True`` requests a field and ``False`` suppresses it.
+            execution_config: Per-run controls reused for every row. Accepts
+                the same keys, values, and restrictions as ``Simulator.run()``:
+                ``seed``, ``shot_parallelism``, ``kernel_parallelism``,
+                ``max_workers``, ``error_handling``, and ``fusion``. If
+                ``seed`` is omitted or ``None``, each row uses fresh entropy.
+            result_config: Output requests applied to every row. Accepts
+                ``counts``, ``final_state``, and ``final_classical_state``,
+                with the same defaults and shot requirements as
+                ``Simulator.run()``.
+            simulation_config: Deprecated alias for ``execution_config``,
+                to be removed before fatqat 0.1.0.
 
         Returns:
             An eager job carrying an ordered list of row results.
@@ -685,8 +674,9 @@ class Simulator:
         Raises:
             TypeError: If ``bindings`` is not an object-keyed mapping, a batch
                 contains values other than built-in ``int``/``float`` or NumPy
-                integer/floating scalars, or either configuration is not a
-                dictionary or ``None``.
+                integer/floating scalars, either configuration is not a
+                dictionary or ``None``, or ``execution_config`` and its
+                deprecated alias are both supplied.
             ValueError: If the program is not parameterized, assignments are
                 missing or duplicated, or batch ranks and lengths disagree.
             BackendValidationError: If a bound row or forwarded run option
@@ -716,6 +706,9 @@ class Simulator:
             >>> ["statevector" in result.available_data for result in results]
             [True, True]
         """
+        execution_config = _resolve_execution_config(
+            execution_config, simulation_config
+        )
         columns = _normalize_parameter_batch(program._instructions, bindings)
         # Structural resolution and lowering happen once for the whole batch,
         # on the same direct-raise validation path as run(): layout,
@@ -725,7 +718,7 @@ class Simulator:
             program,
             resource_layout=resource_layout,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             parameter_values=columns,
         )
         config, context = self._prepare_run(
@@ -769,7 +762,7 @@ class Simulator:
         *,
         resource_layout: ResourceLayout | None,
         initial_state: Any,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
     ) -> _PreparedExecution:
         """Resolve and lower one program for direct or derived execution."""
@@ -780,9 +773,9 @@ class Simulator:
                 "ModeRegister and CountRegister programs on LOSimulator"
             )
         simulation = _normalize_config(
-            simulation_config,
-            self._simulation_config_cls,
-            "simulation_config",
+            execution_config,
+            self._execution_config_cls,
+            "execution_config",
             backend_name=type(self).__name__,
         )
         # Both hooks are resolved exactly once per run, before any execution
@@ -861,7 +854,7 @@ class Simulator:
         observables: tuple[Observable, ...],
         *,
         shots: int,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
         initial_state: Any = None,
     ) -> Job[list[_ExpectationExecution]]:
@@ -877,7 +870,7 @@ class Simulator:
             program,
             resource_layout=None,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             parameter_values=parameter_values,
         )
         # pylint: disable-next=fixme
@@ -1507,6 +1500,8 @@ class Simulator:
             "backend_name": type(self).__name__,
             "method": self._state_field,
             "runtime": self._runtime,
+            "execution_config": asdict(simulation),
+            # Deprecated key; remove with the simulation_config keyword.
             "simulation_config": asdict(simulation),
             "result_config": effective_result_config,
         }
@@ -1677,8 +1672,7 @@ class Simulator:
         channel rule. Background sources, built-in damping descriptors in rate
         form, and ``ThermalRelaxation`` are rejected. For a matrix simulator,
         declare finite ``AmplitudeDamping`` or probability-form
-        ``TransitionRelaxation`` and ``PhaseDamping`` channels instead. Only
-        ``AtomArraySimulator`` accepts ``Loss``.
+        ``TransitionRelaxation`` and ``PhaseDamping`` channels instead.
 
         This validates the model as a whole, not its selectors against a
         program, concrete target dimensions, or method-specific restrictions.

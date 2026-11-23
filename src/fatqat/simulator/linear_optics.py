@@ -82,13 +82,15 @@ class LOSimulator(Simulator):
       `fatqat.operations.BeamSplitter` and `fatqat.operations.PhaseShifter`.
       Reset, noise channels, and custom operations are rejected.
 
-    For anything else, choose ``"statevector"`` or ``"density_matrix"``; every
-    `Simulator` method is available. Read the final state with
-    ``Result.get_fixed_photon_state()``: one amplitude per arrangement of the
-    photons, in the order of `fixed_photon_index`. ``metadata["num_photons"]``
-    gives the photon number.
+    Use ``"statevector"`` or ``"density_matrix"`` for dense initial states,
+    mixed registers, reset, or noise channels. The operator methods from
+    ``Simulator`` are also available.
 
-    ``simulation_config`` accepts every `Simulator` key plus:
+    Read a fixed-photon result with ``Result.get_fixed_photon_state()``. It
+    contains one amplitude per photon arrangement, in the order given by
+    ``fixed_photon_index()``. ``metadata["num_photons"]`` gives the photon count.
+
+    ``execution_config`` accepts every `Simulator` key plus:
 
     - ``"cutoff"`` (``int | None``, default ``None``): the most photons one
       mode can hold. ``None`` chooses it from ``initial_state``: the total
@@ -102,34 +104,21 @@ class LOSimulator(Simulator):
     A noise model selects modes by device label, not by
     `fatqat.ModeRegister` reference.
 
-    `fatqat.Estimator` works with every state method. Pass the photons as its
-    ``initial_state``. On a mode, use `fatqat.observable.NumberOperator` or
-    `fatqat.observable.Projector` up to level ``cutoff``; Pauli operators
-    apply to qubits only.
+    ``fatqat.Estimator`` can use any of this simulator's state methods.
 
     Examples:
-        Two photons meeting on a balanced beam splitter always leave
-        together (Hong-Ou-Mandel interference):
+        To start from vacuum, pass the photon cutoff explicitly:
 
-        >>> import math
-        >>> import numpy as np
         >>> import fatqat as fq
-        >>> import fatqat.operations as ops
-        >>> from fatqat.simulator import BasisState, LOSimulator
         >>> modes = fq.ModeRegister(2)
         >>> program = fq.Program([modes])
-        >>> program.add(ops.BeamSplitter(math.pi / 4), (modes[0], modes[1]))
-        >>> state = (
-        ...     LOSimulator()
-        ...     .run(program, initial_state=BasisState({modes[0]: 1, modes[1]: 1}))
-        ...     .result()
-        ...     .get_fixed_photon_state()
-        ... )
-        >>> np.round(np.abs(state) ** 2, 3)  # (0, 2), (1, 1), (2, 0)
-        array([0.5, 0. , 0.5])
+        >>> simulator = fq.simulator.LOSimulator(runtime="numpy")
+        >>> result = simulator.run(program, execution_config={"cutoff": 1}).result()
+        >>> result.get_fixed_photon_state()
+        array([1.+0.j])
     """
 
-    _simulation_config_cls = _LOSimulationConfig
+    _execution_config_cls = _LOSimulationConfig
     _method_specs = {
         **_METHOD_SPECS,
         "fixed_photon_state": _MethodSpec(
@@ -150,9 +139,10 @@ class LOSimulator(Simulator):
 
         Args:
             method: ``"fixed_photon_state"`` (default), or any `Simulator`
-                method. The default stores only the photon number sent in;
-                choose ``"statevector"`` or ``"density_matrix"`` for qubit
-                registers, dense initial states, noise, or reset.
+                method. The default stores amplitudes for arrangements with
+                the initial photon count. Use ``"statevector"`` or
+                ``"density_matrix"`` for qubit registers, dense initial states,
+                noise, or reset.
             runtime: ``"numpy"`` or ``"numba"``, ``None`` (default) uses
                 the current simulator default.
             implementation_map: Matrix, channel, and custom-operation implementations.
@@ -179,7 +169,7 @@ class LOSimulator(Simulator):
         *,
         resource_layout: ResourceLayout | None,
         initial_state: Any,
-        simulation_config: dict[str, Any] | None,
+        execution_config: dict[str, Any] | None,
         parameter_values: Mapping[Parameter, np.ndarray] | None = None,
     ) -> _PreparedExecution:
         """Resolve mode dimensions, then prepare the run like `Simulator`."""
@@ -195,9 +185,9 @@ class LOSimulator(Simulator):
         refs: dict[RegisterRef, RegisterRef] = {}
         if any(register.dim is None for register in registers):
             simulation = _normalize_config(
-                simulation_config,
-                self._simulation_config_cls,
-                "simulation_config",
+                execution_config,
+                self._execution_config_cls,
+                "execution_config",
                 backend_name=type(self).__name__,
             )
             cutoff = simulation.cutoff
@@ -247,7 +237,7 @@ class LOSimulator(Simulator):
             program,
             resource_layout=resource_layout,
             initial_state=initial_state,
-            simulation_config=simulation_config,
+            execution_config=execution_config,
             parameter_values=parameter_values,
         )
         if not refs:
@@ -486,10 +476,10 @@ def _infer_cutoff(program: Program, quantum: Any) -> int:
             return dim - 1
         raise BackendValidationError(
             f"cannot infer cutoff from an initial_state of length {shape[0]} "
-            f"for {num_modes} mode(s); pass simulation_config['cutoff']"
+            f"for {num_modes} mode(s); pass execution_config['cutoff']"
         )
     raise BackendValidationError(
-        "a ModeRegister program needs simulation_config['cutoff'] or an "
+        "a ModeRegister program needs execution_config['cutoff'] or an "
         "initial_state to infer it from"
     )
 

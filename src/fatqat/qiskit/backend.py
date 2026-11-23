@@ -164,28 +164,33 @@ class FatqatBackend(BackendV2):
     ) -> FatqatJob:
         """Convert and execute one circuit or a nonempty circuit iterable.
 
-        Supported run options are ``shots`` (positive ``int``, default 1024),
-        ``memory`` (``bool``, default ``False``), and ``seed_simulator``
-        (non-negative ``int`` or ``None``, default ``None``). Per-call values
-        override ``backend.options``. Other FATQAT execution controls are not
-        exposed by this backend.
+        Run options override the defaults in ``backend.options``.
 
         Execution completes before :meth:`run` returns. Invalid input
         collections, unknown options,
         nonpositive ``shots``, negative seeds, and option-type errors raise
         immediately. Conversion and simulator failures return a job with
-        ``ERROR`` status; calling its :meth:`~FatqatJob.result` raises Qiskit's
+        ``ERROR`` status; calling its :meth:`~fatqat.qiskit.FatqatJob.result` raises Qiskit's
         ``QiskitError`` with the original failure chained.
 
-        Counts use Qiskit's normal result formatting. With ``memory=True``,
-        the result includes entries consistent with those counts; do not rely
-        on their order to reconstruct shot chronology. A circuit with no
-        classical bits produces neither counts nor memory data.
+        Counts use Qiskit's register and bit order. With ``memory=True``,
+        the result includes entries consistent with those counts. Their order
+        does not describe shot chronology. A circuit with no classical bits
+        produces neither counts nor memory data. Use a native FatQat run to
+        read a final state or operator.
 
         Args:
             run_input: One Qiskit ``QuantumCircuit`` or a nonempty iterable of
                 circuits.
-            **run_options: ``shots``, ``memory``, and/or ``seed_simulator``.
+            **run_options: Options for this call:
+
+                - ``shots`` (positive ``int``, default ``1024``): Samples per
+                  circuit.
+                - ``memory`` (``bool``, default ``False``): Include a list of
+                  outcomes consistent with the returned counts.
+                - ``seed_simulator`` (nonnegative ``int`` or ``None``, default
+                  ``None``): Fix the random seed for a reproducible run. In a
+                  batch, the circuit at index ``i`` uses ``seed_simulator + i``.
 
         Returns:
             A completed :class:`~fatqat.qiskit.FatqatJob` containing a Qiskit
@@ -230,7 +235,7 @@ class FatqatBackend(BackendV2):
                     backend.run(
                         program,
                         shots=shots,
-                        simulation_config={"seed": circuit_seed},
+                        execution_config={"seed": circuit_seed},
                         result_config=result_config,
                     ).result()
                 )

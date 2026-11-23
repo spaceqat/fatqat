@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class FatqatJob(JobV1):
-    """Completed Qiskit job returned by :class:`FatqatBackend`.
+    """Completed Qiskit job returned by :class:`~fatqat.qiskit.FatqatBackend`.
 
     The job is already ``DONE`` or ``ERROR`` when returned; it never enters a
     queued or running state.

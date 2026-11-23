@@ -63,7 +63,7 @@ most-significant tensor factor. For targets `(q0, q1)`:
 
 FATQAT checks the target count and qubit dimensions when the program runs.
 
-## API
+## API reference { #api }
 
 
 ::: fatqat.noise.PauliChannel
