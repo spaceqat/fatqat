@@ -46,8 +46,8 @@ reuses:
    outcome distribution from the simulator.
 5. **Optimize and read out.** Move the angles downhill, then sample and decode.
 
-Everything is seeded, exact where it can be, and runs in a few seconds on a
-laptop CPU.
+Everything is seeded, exact where it can be, and runs in a minute or two on
+a laptop CPU.
 
 ## The problem, as a QUBO
 
@@ -62,7 +62,7 @@ represent an invalid assignment needs no penalty to forbid one.
 
 Nine nodes do not divide evenly into two halves, so the balance target is 4.5
 and the penalty cannot reach zero. It contributes a constant floor of
-$2 \times 0.25$ to every energy, and still prefers a 4/5 split over any other.
+$0.25$ to every energy, and still prefers a 4/5 split over any other.
 
 ```python
 import matplotlib.pyplot as plt
@@ -132,7 +132,7 @@ for i in NODES:
         if i < j:
             add_quadratic(i, j, 2.0 * BALANCE_WEIGHT)
 
-# Constraint: nodes 0 and 5 on opposite sides.
+# Constraint: nodes 1 and 7 on opposite sides.
 first, second = SEPARATE
 constant += SEPARATE_WEIGHT
 linear[first] -= SEPARATE_WEIGHT

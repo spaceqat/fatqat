@@ -60,7 +60,7 @@ qubit 0*: `IZ` acts with $Z$ on qubit 1.
 The exact ground energy is obtained by dense diagonalization of the
 4x4 matrix. It serves two purposes: the reference line on the
 convergence plots, and a reminder that the variational principle bounds
-the *lowest* eigenvalue — the other three are printed for context.
+the *lowest* eigenvalue — the full spectrum is printed for context.
 
 ```python
 import matplotlib.pyplot as plt
@@ -326,7 +326,8 @@ holds physical declarations — here `fq.noise.Depolarizing` after every
 simulator constructed with that model. A density-matrix Estimator in
 `shots=0` mode returns the noise-averaged expectation exactly: no
 sampling is needed to *see* the noise. See
-[ideal and noisy execution](../guide/ideal-and-noisy.md) for the full workflow.
+[Compare the same Program ideally and noisily](../guide/ideal-and-noisy.md)
+for the full workflow.
 
 ```python
 noise = fq.NoiseModel()

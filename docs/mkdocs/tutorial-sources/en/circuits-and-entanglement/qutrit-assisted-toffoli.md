@@ -1,6 +1,7 @@
 ---
 title: "Build a Toffoli gate by borrowing a third level"
 description: "Use a qubit–qutrit–qubit register to construct Toffoli with three qubit–qutrit interactions, then verify its relative phases and return from the borrowed level."
+icon: material-gate-and
 figure_alts:
   - "One simulated input follows 110, 120, 121, and 111 at the input, controlled level exchange, target flip, and restoration checkpoints; the middle system's level-2 population is zero, one, one, and zero."
   - "Transition probabilities from eight logical inputs to all twelve output states: only 110 and 111 exchange places, and the four orange-outlined output rows with middle level 2 have zero population."

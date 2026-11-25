@@ -1,13 +1,14 @@
 ---
-title: "Calibrating a quantum gate"
+title: "Calibrate an X gate on a transmon"
 description: "Build a control pulse, collect amplitude-calibration data, and verify an X rotation on several input states."
+icon: material-tune-vertical
 figure_alts:
   - "Desired-level population and leakage versus amplitude scale, marking the initial pulse at 0.8 and the best tested state-transfer amplitude near one."
-  - "Input-state overlaps and leakage for initial, selected, and phase-rotated pulses: the phase-rotated pulse transfers basis states but fails the superposition checks."
+  - "Output-state overlaps and leakage for initial, selected, and phase-rotated pulses: the phase-rotated pulse transfers basis states but fails the superposition checks."
   - "Coherent X error and mean input leakage versus derivative-correction coefficient at fixed amplitude; their minima occur at different coefficients."
 ---
 
-# Calibrating a quantum gate
+# Calibrate an X gate on a transmon
 
 In this tutorial, we calibrate a control pulse to approximate an X gate.
 Starting with an imperfect amplitude, we run a series of trial pulses and
@@ -234,7 +235,7 @@ state gives the corresponding output.
 
 We test \(|0\rangle\), \(|1\rangle\), \(|+\rangle\), and
 \(|+i\rangle=(|0\rangle+i|1\rangle)/\sqrt{2}\). For each input, we compare
-the pulse output with the ideal output using their **input-state overlap**,
+the pulse output with the ideal output using their **output-state overlap**,
 the squared magnitude of their inner product. An overlap of one means the
 states agree up to a global phase.
 
@@ -355,7 +356,7 @@ for index, (label, (overlaps, leakages)) in enumerate(zip(pulse_labels, probe_re
 for axis in axes:
     axis.set(xticks=positions, xticklabels=probe_labels, xlabel="Input state")
 axes[0].set(
-    ylabel="Input-state overlap with RX(π)",
+    ylabel="Output-state overlap with RX(π)",
     ylim=(0, 1.08),
     title="Check more than population transfer",
 )
@@ -531,6 +532,6 @@ The two curves reach their minima at different coefficients: the pulse with
 the least leakage has a larger X error. Our choice follows the operation we
 want to implement, and the input-state checks confirm the improvement.
 
-To explore the effect of grid resolution, try shifting the original amplitude
+To explore the effect of grid placement, try shifting the original amplitude
 grid by half a step. Keep the duration and selection rule fixed, then compare
 the selected amplitude and coherent X overlap with this run.

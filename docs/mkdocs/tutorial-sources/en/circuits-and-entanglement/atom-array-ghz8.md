@@ -11,7 +11,7 @@ figure_alts:
 
 
 This tutorial builds an eight-atom Greenberger-Horne-Zeilinger (GHZ) state on
-[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator], fatqat's neutral-atom execution
+[`AtomArraySimulator`][fatqat.simulator.AtomArraySimulator], FatQat's neutral-atom execution
 target. It builds on the [quickstart](../guide/quickstart.md) in two ways: the state
 spans eight atoms instead of two, and the circuit runs on a backend whose
 two-qubit-gate connectivity is *reconfigured mid-circuit* rather than fixed.
@@ -32,7 +32,7 @@ is that the two branches are held in *coherent superposition*, with a definite
 relative phase. We will confirm the correlations with sampled counts and then
 confirm the coherence with exact expectation values.
 
-The neutral-atom twist is connectivity. On this backend a `CZ` acts only on a
+On this backend a `CZ` acts only on a
 pair of atoms that is currently *paired*. The [`Pair`][fatqat.operations.Pair] /
 [`Unpair`][fatqat.operations.Unpair] operations update that pairing state as the
 circuit runs. Physically, `Pair` stands for "move these two
@@ -124,17 +124,18 @@ for layer_index, layer in enumerate(CX_LAYERS, start=1):
 ## Why the pairs must move between layers
 
 The tree deliberately couples atoms that are far apart. Layer 1 entangles
-atoms `0` and `4`; layer 2 needs `0` with `2` and `4` with `6`.
-No fixed nearest-neighbour layout can offer all of those adjacencies at once.
+atoms `0` and `4`; layer 2 needs `0` with `2` and `4` with `6`; layer 3
+needs `0` with `1`. Atom `0` therefore needs three partners, which no fixed
+one-dimensional layout can provide, because each site in a line has at most
+two neighbours.
 
-This is where the reconfigurable connectivity earns its place. Just before a
+Reconfigurable connectivity solves this. Just before a
 layer's gates we [`Pair`][fatqat.operations.Pair] its atoms -- transporting
 each pair into a shared entangling zone -- and just after we
 [`Unpair`][fatqat.operations.Unpair] them, freeing the atoms for the next layer's
 regrouping. If we skipped this rearrangement, the layer-2 and layer-3 `CZ`
 gates would target atoms that are not paired and the backend would reject the
-program with [`BackendValidationError`][fatqat.errors.BackendValidationError]. The transport is
-not incidental to the algorithm; it *is* the algorithm's wiring.
+program with [`BackendValidationError`][fatqat.errors.BackendValidationError].
 
 ```python
 def build_ghz8_program(*, measure: bool = True) -> fq.Program:
@@ -299,6 +300,11 @@ print("Most frequent outcomes under 1% loss per move:")
 for bitstring, n in sorted(lossy_counts.items(), key=lambda kv: -kv[1])[:6]:
     print(f"  {bitstring}: {n}")
 ```
+
+In this run 469 of the 2000 shots, 23.5%, contain a `2`. Counting each atom
+in each `Pair` and `Unpair`, the program makes 28 atom moves, so with a 1%
+loss per move about $1 - 0.99^{28} \approx 25\%$ of shots should lose at
+least one atom.
 
 ## Takeaways and next steps
 

@@ -26,7 +26,7 @@ numerical reproduction. The packaged reference supplies the atomic states and
 $C_6$, so we will derive the distance and frequency scales explicitly
 from the selected model.
 
-## 1. Load the physical model
+## Load the physical model
 
 Model selection is explicit. The document tells us which atomic states and
 units its interaction coefficient describes; `from_document` validates it
@@ -47,7 +47,7 @@ print("Basis:", model_document["system"]["basis"])
 print("C6 unit:", model_document["units"]["c6"])
 ```
 
-## 2. Choose the distance from the desired ZZ strength
+## Choose the distance from the desired ZZ strength
 
 In angular-frequency units, the native Rydberg Hamiltonian is
 
@@ -104,7 +104,7 @@ controls do not have to select one perfect alternating bit string. We will
 therefore measure both site populations and a squared order parameter that
 recognizes staggered correlations without assuming a unique final pattern.
 
-## 3. Account for the induced longitudinal field
+## Account for the induced longitudinal field
 
 Collecting all Pauli-Z terms gives
 
@@ -151,7 +151,7 @@ DELTA_INITIAL = -1.5 * U
 DELTA_FINAL = U / 3
 ```
 
-## 4. Build the three-stage pulse
+## Build the three-stage pulse
 
 At the start, $\Omega=0$ and the negative detuning makes
 $|gg\ldots g\rangle$ the ground state. We then:
@@ -237,7 +237,7 @@ figure.tight_layout()
 plt.show()
 ```
 
-## 5. Ask for observables, not measurement shots
+## Ask for observables, not measurement shots
 
 `ONE` is the projector $|r\rangle\langle r|$, so its expectation is
 the Rydberg population of one site. We request all site populations plus the
@@ -245,7 +245,7 @@ pair populations. From them we obtain the mean probability that an adjacent
 pair is simultaneously excited,
 
 $$
-D_{nn}=\frac{1}{N-1}\sum_i\langle n_i n_{i+1}\rangle.
+D_{nn}=\frac{1}{N-1}\sum_i\langle n_i n_{i+1}\rangle,
 $$
 
 and the connected correlation
@@ -313,7 +313,7 @@ staggered_order_squared = fq.Observable.from_sparse(
 observables = site_occupations + pair_occupations + [staggered_order_squared]
 ```
 
-## 6. Keep all interactions, then test the nearest-pair approximation
+## Keep all interactions, then test the nearest-pair approximation
 
 The first run uses the default `interaction_cutoff=None` and retains every
 unordered pair. The second run on the same emulator deletes terms beyond one
@@ -379,7 +379,7 @@ perfect alternating orientation. Together they distinguish antiferromagnetic
 correlations from both a featureless state and one that merely has the right
 average excitation density.
 
-## 7. Read the many-body result
+## Read the many-body result
 
 ```python
 sites = np.arange(NUM_SITES)

@@ -4,7 +4,7 @@
 
 # FatQat
 
-**一个 Program，从算法到硬件。**
+**同一个量子程序，贯通算法与硬件**
 
 [![Tests](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/spaceqat/fatqat/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/fatqat)](https://pypi.org/project/fatqat/)
@@ -18,28 +18,28 @@
 
 </div>
 
-FatQat 是一个用于编写、编译和运行量子程序的 Python 工具包。`Program`
-只需编写一次，就能通过同一套接口在每种后端上运行，从理想模拟器到设备的物理模型。
+FatQat 是一个用于编写、编译和运行量子程序的 Python 工具包。量子程序（`Program`）只需编写一次，
+就能通过同一套接口在各类后端上运行——从理想模拟器到设备的物理模型。
 
-- **算法开发者**可以在接近真实设备的条件下测试算法，为在硬件上运行做好准备。
+- **算法开发者**可以在接近真实设备的条件下验证算法，为在硬件上运行做好准备。
 - **硬件工程师**可以模拟设备对控制、耦合和噪声的响应，找出限制性能的因素。
-- **学生**可以通过引导式示例和应用案例动手学习量子计算，从第一个线路一直学到真实设备的物理。
+- **学生**可以借助循序渐进的示例和应用案例动手学习量子计算，从第一个量子线路一直深入到真实设备的物理。
 
-目前的后端提供三种物理细节层次：
+现有后端提供三种层次的物理细节：
 
 | 模型 | 回答的问题 |
 | --- | --- |
-| 通用模拟 | 算法是否有效？噪声会如何改变结果？ |
+| 通用模拟 | 算法能否按预期工作？噪声会如何改变结果？ |
 | 硬件约束模拟 | 程序是否满足设备对原生门、连通性和原子占据的要求？ |
-| 哈密顿量仿真 | 脉冲期间发生了什么：泄漏、耦合和时序？ |
+| 哈密顿量仿真 | 脉冲作用期间会发生什么：泄漏、耦合与时序？ |
 
-`Program` 不只是门线路。它可以包含：
+`Program` 不只是量子门线路，它还可以包含：
 
 - 作用在量子比特、qudit 或光学模式上的量子门、线路中间测量、前馈和参数；
-- 设备操作，例如装载、配对和丢失原子；
-- 直接编写的控制脉冲，并可与经过校准的量子门混合使用。
+- 设备操作，例如原子装载、原子配对和原子丢失；
+- 直接编写的控制脉冲，可与经过校准的量子门混合使用。
 
-FatQat 还能把逻辑线路编译到超导和中性原子目标，并与 OpenQASM 和 Qiskit 交换线路。
+FatQat 还能将逻辑线路编译到超导和中性原子平台，并支持与 OpenQASM 和 Qiskit 相互转换线路。
 
 ## 安装
 
@@ -75,7 +75,7 @@ print(result.get_counts())  # 只有 '00' 和 '11'
 - [API 参考](https://fatqat.readthedocs.io/zh-cn/latest/api/)：
   精确的签名、单位和验证规则。
 
-版本说明见[更新日志](https://github.com/spaceqat/fatqat/blob/main/CHANGELOG.md)。
+各版本的变更见[更新日志](https://github.com/spaceqat/fatqat/blob/main/CHANGELOG.md)。
 
 ## 参与贡献
 

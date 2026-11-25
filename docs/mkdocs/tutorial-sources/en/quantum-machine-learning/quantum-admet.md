@@ -1,7 +1,7 @@
 ---
 title: "Search quantum circuits for ADMET prediction"
 description: "Reimplement the QCS-ADME search, imbalance-aware scoring, regression scoring, and training workflow with FatQat parameter sweeps."
-icon: material-flask-outline
+icon: material-pill
 figure_alts:
   - "Classification and regression search scores for four candidate quantum circuits on synthetic inputs."
   - "Three-qubit circuit selected by the classification search."
@@ -51,7 +51,7 @@ parameter bindings throughout search and training.
 
 The scientific reference is [*QCS-ADME: Quantum Circuit Search for Drug Property Prediction with
 Imbalanced Data and Regression Adaptation*](https://arxiv.org/abs/2503.01927)
-(2026). The paper provides the motivation and search method.
+(2025). The paper provides the motivation and search method.
 The executable formulas below follow the supplied Quantum ADMET reference
 implementation, including its binary imbalance weighting, one-qubit
 reduced-state score, regression target weighting, composite ranking, and
@@ -62,10 +62,13 @@ To keep execution small and offline, we use three qubits, four candidates,
 synthetic inputs, a fixed line of permitted CX edges, and illustrative
 depolarizing noise. These replace the original study's large candidate pool,
 ADMET datasets, and device-calibration-driven generation. COBYLA replaces
-TorchQuantum autodifferentiation and Adam. The results demonstrate the
-workflow; they are not ADMET benchmark results or a reproduction of the
-original experiment. The final section shows how to load the project's
-existing feature arrays without importing TorchQuantum or PennyLane.
+TorchQuantum autodifferentiation and Adam, and the search and training
+budgets are small. The scores, rankings, and fitted models below therefore
+demonstrate the workflow; they are not converged, not ADMET benchmark
+results, and not a reproduction of the original experiment. Everything is
+seeded and runs in seconds on a laptop CPU. The final section shows how to
+load the project's existing feature arrays without importing TorchQuantum or
+PennyLane.
 
 ## Separate training inputs from evaluation inputs
 
@@ -225,16 +228,17 @@ R_{\rm cls}=1-\frac{\sum_{ij}[W_{ij}(A_{ij}-\bar B_{ij})]^2}
 $$
 
 The weight is squared along with the error, so this score can be negative
-under severe imbalance. We do not clip it or interpret it as accuracy.
+under severe imbalance. We do not clip it.
 
 For regression, the desired similarity is
 $A_{ij}=\exp[-(y_i-y_j)^2/(2\sigma^2)]$. The implementation additionally weights
 the circuit similarity by $G_{ij}=\exp[-(y_i-y_j)^2/2]$, with fixed bandwidth
 one, before computing $R_{\rm reg}=1-\operatorname{mean}[(A-G\bar S)^2]$.
-Both uses of the labels are intentional here. This is a supervised search
-score computed on training examples, not a predictive kernel to evaluate
-using unknown test labels. Regression target scaling changes both Gaussian
-weights and therefore must be recorded when comparing experiments.
+With $\sigma=1$, as used here, $A$ and $G$ are the same matrix; they differ
+only when `SIGMA` is changed. Both uses of the labels are intentional here.
+This is a supervised search score computed on training examples. Regression
+target scaling changes both Gaussian weights and therefore must be recorded
+when comparing experiments.
 
 ```python
 def reduced_similarity(bloch):
@@ -308,16 +312,15 @@ for task, (train_x, train_y, _, _) in tasks.items():
 ```
 
 Every candidate sees the same examples and sampled weight vectors. This
-reduces incidental variation between candidates. Four weight samples are a
-small execution budget, not evidence that the ranking has converged. A
-research run should examine ranking stability across sample counts and seeds.
+reduces incidental variation between candidates.
 
 ## Add Clifford noise resilience and choose candidates
 
 For each candidate we replace every one-qubit gate by a random choice from
 H, S, Z, X, and Y, and retain the CX locations. These are the implementation's
 Clifford decoys. We compare their ideal and noisy computational-basis
-probability distributions using total variation distance:
+probability distributions using total variation distance, which gives the
+Clifford noise resilience (CNR):
 
 $$
 \mathrm{CNR}=1-\frac{1}{D}\sum_{d=1}^{D}
@@ -327,8 +330,7 @@ $$
 
 Here $\alpha=0.25$. The illustrative noise model applies depolarization
 after each CX. Exact density-matrix probabilities remove shot fluctuations
-from this small comparison. The CNR value describes these decoys under
-this noise model; it does not estimate the fidelity of an IBM device.
+from this small comparison.
 
 ```python
 noise = fq.NoiseModel()
@@ -397,8 +399,7 @@ The highest composite score determines which circuit we train for each
 task. These two tasks need not select the same circuit. As in the
 implementation, the multiplicative rule has a limitation: when $R$ is negative, reducing
 CNR makes the product less negative and can improve its rank. Inspect the
-uncombined scores when using strongly imbalanced data; do not treat this
-formula as a universally valid noise penalty.
+uncombined scores when using strongly imbalanced data.
 
 ```python
 selected_program = candidates[selected_candidates["classification"]][0]
@@ -416,8 +417,8 @@ a positive expectation and $-1$ otherwise. Regression uses the expectation
 directly, so its output is bounded to $[-1,1]$.
 
 COBYLA calls the exact FatQat estimator as a black-box function. The small
-evaluation budget keeps the tutorial runnable; reaching that budget is not
-a claim of convergence. We print the optimizer status alongside the loss.
+evaluation budget keeps the tutorial runnable. We print the optimizer status
+alongside the loss.
 
 ```python
 trained = {}
@@ -539,8 +540,7 @@ fig.tight_layout()
 Search scores and held-out predictive performance measure different things.
 The score selects an architecture using a small set of untrained states;
 optimization, data coverage, and readout constraints still determine the
-trained model's performance. Poor results are informative and should not be
-hidden by tuning on the test examples.
+trained model's performance.
 
 With the seeds above, classification reaches about 0.58 balanced accuracy,
 while regression MAE is about 0.69, worse than the constant baseline's 0.48.
@@ -613,7 +613,8 @@ features, fit preprocessing on training molecules and apply the same fitted
 transformation to validation and test molecules. Preserve the intended
 molecular split rather than replacing it with a random row split.
 
-For a larger study, increase the candidate and sampling budgets, select
+For a larger study, increase the candidate and sampling budgets, check that
+the ranking is stable across sample counts and seeds, select
 hyperparameters on a separate validation split, and evaluate the test split
 once. Preserve candidates, seeds, optimized weights, target transforms, and
 noise settings with the results. Existing TorchQuantum checkpoints and
@@ -621,7 +622,7 @@ device mappings are not consumed by this tutorial: reusing a particular
 legacy circuit requires translating its ordered gates and parameter bounds
 into a `Program` and verifying its outputs before retraining.
 
-Next, use [ideal and noisy simulation](../guide/ideal-and-noisy.md) to
+Next, use [Compare the same Program ideally and noisily](../guide/ideal-and-noisy.md) to
 evaluate the fitted circuit under the same noise model used for selection,
 or [the Estimator reference](../api/estimator.md) to introduce sampled
 expectations. When sampling sweeps, reusing a seed can correlate errors

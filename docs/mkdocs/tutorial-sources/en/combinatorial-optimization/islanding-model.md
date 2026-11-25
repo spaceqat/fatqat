@@ -1,6 +1,6 @@
 ---
 title: "Model controlled islanding as a QUBO"
-description: "Why splitting a power grid to stop a cascading failure is a combinatorial optimization problem, and how to write it as a QUBO that a quantum optimizer can take."
+description: "Show why splitting a power grid to stop a cascading failure is a combinatorial optimization problem, and write it as a QUBO for a quantum optimizer."
 icon: material-transmission-tower
 figure_alts:
   - "The cheapest split of the WSCC 9-bus network compared with the split that respects generator coherency"
@@ -71,6 +71,8 @@ make can still be one the grid cannot survive. Four requirements matter:
 - **Each island must be connected.** A set of buses with no path between them
   is not an island; it is two islands, one of which may have no generator at
   all.
+- **Islands should be balanced.** The model asks for islands of roughly equal
+  size, which rules out the degenerate split that cuts off a single bus.
 
 The identification of coherent groups is a separate problem with its own
 literature [2]. The search for a splitting strategy that respects them is the
@@ -191,7 +193,8 @@ The textbook encoding gives every bus one binary variable per island:
 $y_{i,g} = 1$ when bus $i$ joins island $g$. It handles any number of islands,
 but most of its bitstrings are nonsense — a bus can be assigned to two islands,
 or to none — so it needs a one-hot penalty $\sum_i (\sum_g y_{i,g} - 1)^2$ to
-forbid them, and it costs $n_\text{buses} \times k$ qubits.
+forbid them, written in the standard way of turning a constraint into a
+quadratic penalty [4], and it costs $n_\text{buses} \times k$ qubits.
 
 When there are exactly two islands, the one-hot rule says $y_{i,1} = 1 -
 y_{i,0}$: the second variable carries no information. Keeping one variable per
@@ -454,7 +457,7 @@ disconnected pieces, and the best *usable* split costs noticeably more.
 
 This is not a modeling mistake — it is a deliberate trade. Writing connectivity
 as a quadratic penalty needs auxiliary variables and a great many terms, which
-buys width and depth on a device that has neither to spare. Checking it after
+costs width and depth on a device that has neither to spare. Checking it after
 decoding costs nothing. The consequence is that minimizing the QUBO is not the
 same as solving the problem, and the gap has to be closed somewhere else. That
 is the job of the postprocessing in
@@ -582,11 +585,9 @@ twice as much interrupted power. That trade — a worse cut in exchange for a
 split the grid survives — is why this is a constrained optimization problem and
 not a minimum-cut computation.
 
-The 14-bus system is bound by a different requirement. There the cheapest split
-happens to separate the coherent groups correctly, and what makes it unusable is
-that one of its islands falls into two disconnected pieces. Both systems land on
-the same lesson from opposite directions: the cheap answer is not the usable
-one.
+On the 14-bus system the cheapest split already separates the coherent groups
+correctly; it fails the connectivity check instead, as shown above. In both
+systems the cheapest answer is not the usable one.
 
 Here are the answers the full model gives on each.
 
@@ -609,15 +610,12 @@ The model is now complete enough to hand to an optimizer. It is a quadratic
 function of binary variables in which:
 
 - the **objective** is the interrupted power flow;
-- **generator coherency**, **island balance**, and — optionally — generation,
-  load, and minimum size per island are quadratic penalties that vanish exactly
-  when the requirement holds;
-- **connectivity is not represented at all**, and is checked after a candidate
-  is decoded.
+- **generator coherency** and **island balance** are quadratic penalties
+  that vanish exactly when the requirement holds;
+- **connectivity**, together with generation, load, and minimum size per
+  island, is not part of the QUBO and is checked after a candidate is decoded.
 
-That last point is a deliberate trade, and on the 14-bus system it has teeth:
-the QUBO's own minimum is a split whose islands are disconnected, so minimizing
-the model is not the same as solving the problem. Closing that gap is a
+Closing the gap between the QUBO's minimum and the best feasible split is a
 postprocessing step rather than a modeling one, and it is where the next
 tutorial begins.
 
