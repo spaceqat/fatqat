@@ -120,7 +120,7 @@ figure = result.draw(number_to_keep=20, sort="count")
     program.measure_all()
 
     result = (
-        fq.simulator.Simulator(runtime="numpy")
+        fq.simulator.Simulator()
         .run(program, shots=1000, execution_config={"seed": 7})
         .result()
     )

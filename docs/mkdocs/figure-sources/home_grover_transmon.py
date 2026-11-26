@@ -96,9 +96,7 @@ for subsystem in model.subsystem_ids:
         targets=subsystem,
     )
 
-compiler_backend = fq.simulator.SCQubitSimulator(
-    num_qubits=3, couplings=COUPLINGS, runtime="numpy"
-)
+compiler_backend = fq.simulator.SCQubitSimulator(num_qubits=3, couplings=COUPLINGS)
 compiled = fq.compiler.compile_to_sc(
     build_logical_program(), compiler_backend, seed=COMPILER_SEED
 )

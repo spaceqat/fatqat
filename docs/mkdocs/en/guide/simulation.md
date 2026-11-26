@@ -11,7 +11,7 @@ then vary the rotation angle to see how the probabilities change.
 >>> import fatqat.operations as ops
 >>> rotation = fq.Program(1, 1)
 >>> rotation.add(ops.RY(np.pi / 2), 0)
->>> backend = fq.simulator.Simulator(method="statevector", runtime="numpy")
+>>> backend = fq.simulator.Simulator(method="statevector")
 >>> result = backend.run(rotation).result()
 >>> state = result.get_statevector()
 >>> probabilities = np.abs(state) ** 2
@@ -25,20 +25,6 @@ each. No measurements were sampled to obtain these probabilities. The
 classical bit declared by `Program(1, 1)` will hold the measurement outcome in
 the next example.
 
-`runtime="numpy"` avoids compilation startup for this small circuit.
-[Performance and scaling](performance.md) explains when to compare it with
-the Numba runtime.
-
-To use NumPy for matrix simulation throughout a script or notebook, set the
-default before creating simulators. The initial default is Numba.
-
-```python
-# guide-test: skip
-import fatqat as fq
-
-fq.simulator.set_default_runtime("numpy")
-```
-
 ## Choose a simulation method
 
 Set `method` to choose how the simulator represents the state:
@@ -47,6 +33,15 @@ Set `method` to choose how the simulator represents the state:
   noise trajectories.
 - **`density_matrix`** represents a mixed state and applies noise channels
   directly, without sampling trajectories.
+
+For small circuits with noise channels, fewer than 10 qubits, use
+`density_matrix`. A single density-matrix run applies each channel exactly,
+which is usually faster than sampling enough statevector trajectories for a
+comparable result. Statevector trajectories pay off for larger circuits, where
+the density matrix becomes too large to store. The same holds for
+superconducting device profiles. The atom-array simulator is the exception:
+keep `statevector` there, as described in its
+[API reference](../api/simulators/atom-array.md).
 
 Use `unitary` or `superop` when you need the circuit's full transformation
 rather than its output state.
@@ -96,7 +91,7 @@ The dashed line below marks the exact probability for both outcomes:
 
     rotation = fq.Program(1, 1)
     rotation.add(ops.RY(np.pi / 2), 0)
-    backend = fq.simulator.Simulator(method="statevector", runtime="numpy")
+    backend = fq.simulator.Simulator(method="statevector")
     state = backend.run(rotation).result().get_statevector()
     exact_probability = abs(state[0]) ** 2
 
@@ -167,7 +162,7 @@ angle grid to show that dependence:
     rotation.add(ops.RY(theta), 0)
 
     angles = np.linspace(0.0, 2.0 * np.pi, 41)
-    backend = fq.simulator.Simulator(method="statevector", runtime="numpy")
+    backend = fq.simulator.Simulator(method="statevector")
     results = backend.run_sweep(
         rotation,
         {theta: angles},

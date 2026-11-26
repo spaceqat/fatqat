@@ -175,7 +175,7 @@ def generate_candidate(seed):
 
 
 candidates = [generate_candidate(100 + i) for i in range(NUM_CANDIDATES)]
-ideal_backend = fq.simulator.Simulator(method="statevector", runtime="numpy")
+ideal_backend = fq.simulator.Simulator(method="statevector")
 estimator = fq.Estimator(ideal_backend)
 BLOCH = [
     fq.Observable.from_sparse([(axis, (0,), 1.0)])
@@ -335,9 +335,7 @@ from this small comparison.
 ```python
 noise = fq.NoiseModel()
 noise.add(fq.noise.Depolarizing(p=0.03), operation=ops.CX)
-noisy_backend = fq.simulator.Simulator(
-    method="density_matrix", runtime="numpy", noise=noise
-)
+noisy_backend = fq.simulator.Simulator(method="density_matrix", noise=noise)
 
 
 def clifford_resilience(locations, seed):

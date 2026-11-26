@@ -43,7 +43,7 @@ the default grid, sites 0 and 5 are diagonal neighbors, so this pair cannot run
 ```pycon
 >>> import fatqat as fq
 >>> import fatqat.operations as ops
->>> sim = fq.simulator.SCQubitSimulator(runtime="numpy")
+>>> sim = fq.simulator.SCQubitSimulator()
 >>> sim.implementation_map.supports(ops.CZ, device_operands=(0, 5))
 False
 ```

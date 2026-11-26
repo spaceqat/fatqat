@@ -227,7 +227,7 @@ sampling uncertainty and need no random seed. We can use the same helper
 for the full gate or a prefix of its instructions.
 
 ```python
-state_backend = fq.simulator.Simulator(method="statevector", runtime="numpy")
+state_backend = fq.simulator.Simulator(method="statevector")
 
 
 def evolve(instructions, initial_state):
@@ -410,7 +410,7 @@ entries zero.
 
 ```python
 unitary = (
-    fq.simulator.Simulator(method="unitary", runtime="numpy")
+    fq.simulator.Simulator(method="unitary")
     .run(toffoli_program, result_config={"counts": False, "final_state": True})
     .result()
     .get_unitary()

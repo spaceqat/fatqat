@@ -23,7 +23,7 @@ you can run it without assigning the qubits to sites on a device.
 >>> bell.add(ops.H, 0)
 >>> bell.add(ops.CX, (0, 1))
 >>> bell.measure_all()
->>> counts = fq.simulator.Simulator(runtime="numpy").run(
+>>> counts = fq.simulator.Simulator().run(
 ...     bell,
 ...     shots=16,
 ...     execution_config={"seed": 7},
@@ -43,7 +43,6 @@ gate table into application code:
 ...     num_qubits=6,
 ...     couplings=((0, 1), (1, 2), (3, 4), (4, 5),
 ...                (0, 3), (1, 4), (2, 5)),
-...     runtime="numpy",
 ... )
 >>> profile.implementation_map.supports(ops.H)
 False
@@ -100,7 +99,9 @@ the outcome.
 Copy `native` and add measurements to the copy. Each qubit starts in zero,
 so flipping both qubits gives the ideal measurement outcome `11`. Run the
 same measured Program at sites 0 and 1, with 100 shots each under ideal
-conditions and with the built-in noise model.
+conditions and with the built-in noise model. The noisy profile uses a
+density matrix: for a circuit this small, applying the noise channels directly
+is faster than sampling statevector trajectories.
 
 ```pycon
 >>> profile_type = fq.simulator.SCQubitSimulator
@@ -108,7 +109,7 @@ conditions and with the built-in noise model.
 ...     num_qubits=6,
 ...     couplings=((0, 1), (1, 2), (3, 4), (4, 5),
 ...                (0, 3), (1, 4), (2, 5)),
-...     runtime="numpy",
+...     method="density_matrix",
 ...     noise=profile_type.default_noise_model(),
 ... )
 >>> measured_native = native.copy()
@@ -176,7 +177,7 @@ A state fidelity of one means the states match exactly.
         sim = fq.simulator.SCQubitSimulator(
             num_qubits=6,
             couplings=((0, 1), (1, 2), (3, 4), (4, 5), (0, 3), (1, 4), (2, 5)),
-            method="density_matrix", runtime="numpy", noise=noise,
+            method="density_matrix", noise=noise,
         )
         result = sim.run(
             program, resource_layout=layout, shots=0, result_config={"final_state": True}

@@ -46,7 +46,7 @@ index and the probability of being in level 2.
 >>> program.add(ops.Shift(2), 0)
 >>> mean_level = fq.Observable.from_sparse([(NumberOperator(), (0,), 1.0)])
 >>> in_level_2 = fq.Observable.from_sparse([(Projector(2), (0,), 1.0)])
->>> estimator = fq.Estimator(fq.simulator.Simulator(runtime="numpy"))
+>>> estimator = fq.Estimator(fq.simulator.Simulator())
 >>> result = estimator.run(program, [mean_level, in_level_2]).result()
 >>> result.get_expectation().tolist()
 [2.0, 1.0]

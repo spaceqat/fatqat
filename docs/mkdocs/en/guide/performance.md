@@ -25,7 +25,11 @@ For example, 20 qubits need about 16 MiB for a complex128 statevector alone.
 A density matrix of the same system needs about 16 TiB. Temporary arrays add
 to these storage costs. For noisy simulations, this makes statevector
 trajectories useful at sizes where a density matrix is too large; the
-tradeoff is sampling uncertainty.
+tradeoff is sampling uncertainty. Below 10 qubits the balance reverses: a
+density matrix is still small, and one density-matrix run with noise
+channels is usually faster than the many statevector trajectories needed for
+comparable precision. The atom-array simulator is an exception; see its
+[API reference](../api/simulators/atom-array.md).
 
 Choose results to match the question. Use counts for a measurement
 distribution, an Estimator for correlations or energies, and a final state

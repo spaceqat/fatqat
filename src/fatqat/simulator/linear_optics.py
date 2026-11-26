@@ -112,7 +112,7 @@ class LOSimulator(Simulator):
         >>> import fatqat as fq
         >>> modes = fq.ModeRegister(2)
         >>> program = fq.Program([modes])
-        >>> simulator = fq.simulator.LOSimulator(runtime="numpy")
+        >>> simulator = fq.simulator.LOSimulator()
         >>> result = simulator.run(program, execution_config={"cutoff": 1}).result()
         >>> result.get_fixed_photon_state()
         array([1.+0.j])

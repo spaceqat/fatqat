@@ -25,7 +25,7 @@ leaving its computational-basis probabilities unchanged:
 >>> bell.add(ops.CX, (0, 1))
 >>> phase_flipped = bell.copy()
 >>> phase_flipped.add(ops.Z, 0)
->>> backend = fq.simulator.Simulator(method="statevector", runtime="numpy")
+>>> backend = fq.simulator.Simulator(method="statevector")
 >>> state = backend.run(bell).result().get_statevector()
 >>> flipped_state = backend.run(phase_flipped).result().get_statevector()
 >>> np.round(np.abs(state) ** 2, 6).tolist()
@@ -123,7 +123,7 @@ below each estimate:
     bell.add(ops.H, 0)
     bell.add(ops.CX, (0, 1))
     estimator = fq.Estimator(
-        fq.simulator.Simulator(method="statevector", runtime="numpy")
+        fq.simulator.Simulator(method="statevector")
     )
     zi = fq.Observable([("ZI", 1.0)])
     exact = estimator.run(bell, zi, shots=0).result().get_expectation()

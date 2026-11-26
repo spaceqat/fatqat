@@ -22,7 +22,7 @@ from home_grover_program import (
 )
 
 program = build_logical_program()
-simulator = fq.simulator.Simulator(runtime="numpy")
+simulator = fq.simulator.Simulator()
 
 state = (
     simulator.run(
@@ -36,9 +36,7 @@ state = (
 probabilities = np.abs(state) ** 2
 probabilities /= probabilities.sum()
 
-compiler_backend = fq.simulator.SCQubitSimulator(
-    num_qubits=3, couplings=COUPLINGS, runtime="numpy"
-)
+compiler_backend = fq.simulator.SCQubitSimulator(num_qubits=3, couplings=COUPLINGS)
 compiled = fq.compiler.compile_to_sc(program, compiler_backend, seed=COMPILER_SEED)
 compiled_result = compiler_backend.run(
     compiled,

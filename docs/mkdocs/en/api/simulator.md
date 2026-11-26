@@ -22,6 +22,10 @@ arbitrary input. In the table, `D` is the product of the subsystem dimensions.
 | `unitary` | The matrix of a program made up of unitary operations. | `(D, D)` |
 | `superop` | The linear map on density matrices, including reset and finite noise channels. | `(D**2, D**2)` |
 
+With noise channels on fewer than 10 qubits, `density_matrix` is usually
+faster than `statevector`, which needs many sampled trajectories to reach
+comparable precision.
+
 Both state methods support measurement and classical conditions. Both operator
 methods require a program without measurements or classical conditions, and
 return the map without taking an initial state or producing counts. Their
@@ -56,7 +60,7 @@ from a Bell-state program.
 >>> bell.add(ops.H, 0)
 >>> bell.add(ops.CX, (0, 1))
 >>> bell.measure_all()
->>> simulator = fq.simulator.Simulator(runtime="numpy")
+>>> simulator = fq.simulator.Simulator()
 >>> counts = simulator.run(
 ...     bell, shots=1000, execution_config={"seed": 42}
 ... ).result().get_counts()
