@@ -8,6 +8,7 @@ gate-level backends in :mod:`fatqat.simulator`, pulse models in
 
 from . import emulator
 from . import errors
+from . import multisite
 from . import noise
 from . import operations
 from . import simulator
@@ -58,6 +59,7 @@ __all__ = [
     "emulator",
     "visualization",
     "errors",
+    "multisite",
     "noise",
     "Backend",
     "Estimator",
