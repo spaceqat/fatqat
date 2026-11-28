@@ -99,10 +99,15 @@ def test_engine_support_validates_execution_controls(
     monkeypatch, request_kind, config, match
 ):
     backend = Simulator("SV", runtime="numpy")
+    capabilities = backend._engine.capabilities
     monkeypatch.setattr(
         backend._engine,
         "_capabilities",
-        replace(backend._engine.capabilities, supports_process_shots=False),
+        replace(
+            capabilities,
+            supports_process_shots=False,
+            kernels=replace(capabilities.kernels, supports_fusion=False),
+        ),
     )
     program = fq.Program(1)
     theta = fq.Parameter("theta")

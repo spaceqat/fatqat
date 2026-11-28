@@ -70,6 +70,7 @@ import numpy as np
 from ..._execution_contract import (
     _RunContext,
     _SimulationConfig as SimulationConfig,
+    _GateFusionLimits,
     _KernelCapabilities,
     _EngineCapabilities,
     _QuantumCapabilities,
@@ -147,7 +148,12 @@ class NumpySVEngine(_NdarrayEngine):
         ),
         trajectory=_TrajectoryCapabilities(classical_register=True, occupancy=True),
         kernels=_KernelCapabilities(
-            supports_kernel_threads=False, thread_capacity=1, supports_fusion=False
+            supports_kernel_threads=False,
+            thread_capacity=1,
+            supports_fusion=True,
+            gate_fusion=_GateFusionLimits(
+                min_size=2**20, max_dim=8, structure_aware=False
+            ),
         ),
         supports_process_shots=True,
     )
@@ -212,7 +218,12 @@ class NumpyDMEngine(_NdarrayEngine):
         ),
         trajectory=_TrajectoryCapabilities(classical_register=True, occupancy=True),
         kernels=_KernelCapabilities(
-            supports_kernel_threads=False, thread_capacity=1, supports_fusion=False
+            supports_kernel_threads=False,
+            thread_capacity=1,
+            supports_fusion=True,
+            gate_fusion=_GateFusionLimits(
+                min_size=2**10, max_dim=8, structure_aware=False
+            ),
         ),
         supports_process_shots=True,
     )

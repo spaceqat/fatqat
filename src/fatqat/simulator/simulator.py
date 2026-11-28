@@ -536,9 +536,22 @@ class Simulator:
                   ``result()`` re-raises the original exception. Input and
                   configuration validation always raise directly. Engine
                   planning errors follow this option.
-                - ``"fusion"`` (``bool``, default ``False``): Whether to
-                  combine compatible adjacent operations. ``True`` requires
-                  Numba with ``unitary`` or ``superop``.
+                - ``"fusion"`` (``bool``, default ``False``): ``True`` allows
+                  the engine to merge compatible adjacent operations. It is
+                  accepted for ``statevector`` and ``density_matrix`` on
+                  either runtime, and for ``unitary`` and ``superop`` on
+                  Numba; NumPy rejects it for ``unitary`` and ``superop``.
+                  The engine may skip merging, for example on a small system.
+                  Merging follows program order and does not reorder gates.
+                  One merged matrix spans only a few qubits. On a wider
+                  register, gates on the same qubits merge best when they are
+                  adjacent: write ``RX(q0), RZ(q0), RX(q1), RZ(q1), ...``
+                  rather than ``RX(q0), RX(q1), ..., RZ(q0), RZ(q1), ...``.
+                  It is rejected when the run tracks atom occupancy, so
+                  ``AtomArraySimulator`` always rejects it. Do not use it with
+                  a custom operation that enables occupancy during the run.
+                  The run does not check this case, and the result can be
+                  wrong.
 
                 Unknown or incompatible entries are rejected.
             result_config: Optional output requests. Accepted keys are:
@@ -1376,6 +1389,15 @@ class Simulator:
             raise BackendValidationError(
                 "fusion=True is not supported by the selected matrix engine; fusion "
                 "does not control compiled multi-shot execution"
+            )
+        # A fused gate skips its whole block when one site is empty.
+        if (
+            simulation_config.fusion
+            and execution.initial_state.classical.occupied is not None
+        ):
+            raise BackendValidationError(
+                "fusion=True is not supported when the run tracks atom occupancy. "
+                "Run with fusion=False."
             )
         if (
             simulation_config.shot_parallelism == "processes"

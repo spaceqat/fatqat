@@ -98,6 +98,7 @@ from ..._execution_contract import (
     RawResult,
     _SimulationConfig as SimulationConfig,
     _RunContext,
+    _GateFusionLimits,
     _KernelCapabilities,
     _EngineCapabilities,
     _QuantumCapabilities,
@@ -218,7 +219,10 @@ class NumbaSVEngine(_NdarrayEngine):
         kernels=_KernelCapabilities(
             supports_kernel_threads=True,
             thread_capacity=_MAX_THREADS,
-            supports_fusion=False,
+            supports_fusion=True,
+            gate_fusion=_GateFusionLimits(
+                min_size=2**21, max_dim=8, structure_aware=True
+            ),
         ),
         supports_process_shots=True,
     )
@@ -535,7 +539,10 @@ class NumbaSVEngine(_NdarrayEngine):
         for bound in _bind_parameter_batch(plan, context.system_dims):
             if policy.workflow != "numba_trajectories":
                 yield self._dispatch_by_shot_strategy(
-                    bound, context, policy, initial_state
+                    self._apply_gate_fusion(bound, context, policy),
+                    context,
+                    policy,
+                    initial_state,
                 )
                 continue
             if packed is None:
@@ -595,7 +602,10 @@ class NumbaDMEngine(_NdarrayEngine):
         kernels=_KernelCapabilities(
             supports_kernel_threads=True,
             thread_capacity=_MAX_THREADS,
-            supports_fusion=False,
+            supports_fusion=True,
+            gate_fusion=_GateFusionLimits(
+                min_size=2**7, max_dim=4, structure_aware=True
+            ),
         ),
         supports_process_shots=True,
     )

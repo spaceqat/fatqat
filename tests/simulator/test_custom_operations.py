@@ -7,7 +7,10 @@ import pytest
 
 import fatqat as fq
 import fatqat.operations as ops
-from fatqat.errors import BackendValidationError, UnsupportedOperationError
+from fatqat.errors import (
+    BackendValidationError,
+    UnsupportedOperationError,
+)
 from fatqat.implementation import (
     CustomOperationImplementation,
     MatrixImplementationMap,
@@ -346,3 +349,23 @@ def test_run_rejects_invalid_initial_occupancy():
             program,
             initial_state=EvolutionState(classical=ClassicalState(occupied={4})),
         )
+
+
+def _prepared_program():
+    program = fq.Program(2, 1)
+    program.add(Prepare(), 0)
+    program.add(ops.RX(np.pi), 0)
+    program.add(ops.RX(np.pi), 1)
+    program.measure(0, 0)
+    return program
+
+
+def test_custom_operation_that_keeps_occupancy_off_runs_fused():
+    simulator = simulator_for(Prepare, IdentityImplementation())
+
+    fused = simulator.run(
+        _prepared_program(), shots=4, execution_config={"fusion": True}
+    ).result()
+    unfused = simulator.run(_prepared_program(), shots=4).result()
+
+    assert fused.get_counts() == unfused.get_counts() == {"1": 4}
