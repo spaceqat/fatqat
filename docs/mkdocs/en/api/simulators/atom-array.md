@@ -14,7 +14,15 @@ shot.
 The program declares the number of sites. Quantum registers must contain qubits,
 and a [`GridRegister`][fatqat.GridRegister] maps to consecutive integer labels,
 just like other registers. Use `statevector` or `density_matrix` to evolve the
-state.
+state. Prefer `statevector`, including for noisy programs on a few atoms.
+Loss makes the atom array different from other simulators: whether an atom is
+still present is classical information that changes from shot to shot, and a
+lost atom must skip every later gate. A single density matrix cannot hold this
+mixture of occupancy patterns, so the simulator samples loss and evolves one
+state per shot under either method. Since shots are sampled anyway, a
+statevector trajectory is the cheaper choice; a density matrix would add
+cost without removing sampling. The simulator tracks occupancy per shot for
+every atom-array program, so the same holds without `Loss`.
 
 The native gates are `RX`, `RY`, `RZ`, and `CZ`. To extend them, add rules to the
 copy returned by
@@ -54,7 +62,7 @@ each shot reports `02`.
 >>> program = fq.Program(2, 2)
 >>> program.add(ops.Put, 0)
 >>> program.measure_all()
->>> sim = fq.simulator.AtomArraySimulator(runtime="numpy")
+>>> sim = fq.simulator.AtomArraySimulator()
 >>> sim.run(program, shots=4).result().get_counts()
 {'02': 4}
 ```

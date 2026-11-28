@@ -44,7 +44,7 @@ under different assumptions:
     model, this run gives the ideal probabilities:
 
     ```pycon
-    >>> general = fq.simulator.Simulator(method="statevector", runtime="numpy")
+    >>> general = fq.simulator.Simulator(method="statevector")
     >>> general_result = general.run(
     ...     program,
     ...     shots=0,
@@ -67,7 +67,6 @@ under different assumptions:
     >>> profile = fq.simulator.SCQubitSimulator(
     ...     num_qubits=1,
     ...     couplings=(),
-    ...     runtime="numpy",
     ... )
     >>> profile_result = profile.run(
     ...     profile_program,

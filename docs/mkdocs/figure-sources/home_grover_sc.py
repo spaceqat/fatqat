@@ -68,7 +68,6 @@ result = (
         num_qubits=3,
         couplings=COUPLINGS,
         method="density_matrix",
-        runtime="numpy",
         noise=noise,
     )
     .run(

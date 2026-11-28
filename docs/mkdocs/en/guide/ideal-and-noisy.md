@@ -25,10 +25,7 @@ Prepare a Bell pair and measure both qubits:
 >>> bell.add(ops.H, 0)
 >>> bell.add(ops.CX, (0, 1))
 >>> bell.measure_all()
->>> ideal_backend = fq.simulator.Simulator(
-...     method="density_matrix",
-...     runtime="numpy",
-... )
+>>> ideal_backend = fq.simulator.Simulator(method="density_matrix")
 >>> ideal_counts = ideal_backend.run(
 ...     bell,
 ...     shots=4_000,
@@ -69,7 +66,6 @@ Pass the noise model to another simulator:
 ... )
 >>> noisy_backend = fq.simulator.Simulator(
 ...     method="density_matrix",
-...     runtime="numpy",
 ...     noise=noise,
 ... )
 >>> noisy_counts = noisy_backend.run(
@@ -113,12 +109,8 @@ shifting the balance between `00` and `11`.
         )
     )
 
-    ideal_backend = fq.simulator.Simulator(
-        method="density_matrix", runtime="numpy"
-    )
-    noisy_backend = fq.simulator.Simulator(
-        method="density_matrix", runtime="numpy", noise=noise
-    )
+    ideal_backend = fq.simulator.Simulator(method="density_matrix")
+    noisy_backend = fq.simulator.Simulator(method="density_matrix", noise=noise)
     shots = 4_000
     run_options = {"shots": shots, "execution_config": {"seed": 7}}
     ideal = ideal_backend.run(bell, **run_options).result().get_counts()
@@ -168,6 +160,11 @@ A statevector simulator can also run this noise model. It samples individual
 noise trajectories, using less memory to represent the state. This is useful
 for larger circuits where storing a density matrix is too expensive. More
 shots improve the precision of the sampled distribution.
+
+For circuits with fewer than 10 qubits, such as this Bell pair, prefer the
+density matrix. Applying each channel once to a small density matrix is
+usually faster than sampling the many trajectories needed for the same
+precision.
 
 Both methods describe the same noise model and should give statistically
 consistent measurement frequencies. Use a density matrix when you need the

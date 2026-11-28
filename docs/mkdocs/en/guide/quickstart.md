@@ -85,7 +85,7 @@ example_program = fq.Program(1, 1)
 example_program.add(ops.X, 0)
 example_program.measure_all()
 example_result = (
-    fq.simulator.Simulator(runtime="numpy")
+    fq.simulator.Simulator()
     .run(example_program, shots=100)
     .result()
 )
@@ -237,7 +237,7 @@ Use `Result.draw()` to plot the counts.
     program.measure_all()
 
     result = (
-        fq.simulator.Simulator(runtime="numpy")
+        fq.simulator.Simulator()
         .run(program, shots=1000, execution_config={"seed": 7})
         .result()
     )

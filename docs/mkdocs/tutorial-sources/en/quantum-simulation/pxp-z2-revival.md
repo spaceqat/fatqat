@@ -238,10 +238,8 @@ implementation_map.add(PXPBulk, BULK_MATRIX)
 implementation_map.add(PXPEdgeLeft, EDGE_LEFT_MATRIX)
 implementation_map.add(PXPEdgeRight, EDGE_RIGHT_MATRIX)
 
-# Use NumPy to avoid compilation startup in this small example.
 backend = fq.simulator.Simulator(
     method="SV",
-    runtime="numpy",
     implementation_map=implementation_map,
 )
 

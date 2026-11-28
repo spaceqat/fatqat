@@ -69,7 +69,6 @@ and noise settings for the run.
 sc_backend = fq.simulator.SCQubitSimulator(
     num_qubits=3,
     couplings=target.couplings,
-    runtime="numpy",
 )
 result = sc_backend.run(
     sc_compiled,
@@ -109,7 +108,7 @@ from fatqat.compiler.algorithms import load_architecture
 architecture = load_architecture("default")
 na_compiled = fq.compiler.compile_to_na(circuit, architecture)
 
-na_backend = fq.simulator.AtomArraySimulator(runtime="numpy")
+na_backend = fq.simulator.AtomArraySimulator()
 result = na_backend.run(na_compiled, shots=100).result()
 counts = result.get_counts()
 ```

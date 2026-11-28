@@ -39,7 +39,7 @@ Photons enter through the run's `initial_state`: a
 mode, and unnamed modes start empty. Send one photon into mode 0:
 
 ```pycon
->>> simulator = LOSimulator(runtime="numpy")
+>>> simulator = LOSimulator()
 >>> one_photon = BasisState({modes[0]: 1})
 >>> simulator.run(
 ...     splitter, shots=1000, initial_state=one_photon,
@@ -136,7 +136,7 @@ A finer sweep traces the full curves:
         [([Projector(1), Projector(1)], (0, 1), 1.0)]
     )
     angles = np.linspace(0.0, math.pi / 2, 61)
-    rows = fq.Estimator(LOSimulator(runtime="numpy")).run_sweep(
+    rows = fq.Estimator(LOSimulator()).run_sweep(
         mixer,
         coincidence,
         {theta: angles},

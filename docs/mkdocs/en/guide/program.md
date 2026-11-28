@@ -116,7 +116,7 @@ original template remains available for other values:
 >>> template.add(ops.RY(theta), 0)
 >>> quarter_turn = template.assign_parameters({theta: np.pi / 2})
 >>> half_turn = template.assign_parameters({theta: np.pi})
->>> template_backend = fq.simulator.Simulator("SV", runtime="numpy")
+>>> template_backend = fq.simulator.Simulator("SV")
 >>> quarter_state = template_backend.run(quarter_turn).result().get_statevector()
 >>> half_state = template_backend.run(half_turn).result().get_statevector()
 >>> round(float(abs(quarter_state[1]) ** 2), 3)

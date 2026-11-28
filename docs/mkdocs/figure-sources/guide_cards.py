@@ -66,7 +66,6 @@ def render(output: Path) -> tuple[str, ...]:
     profile = fq.simulator.SCQubitSimulator(
         num_qubits=12,
         couplings=couplings,
-        runtime="numpy",
     )
     gate_map = profile.implementation_map
     edges = {
